@@ -39,7 +39,7 @@ The installer and program were compiled using MATLAB. On first install you may n
 #### S50
 Eng State,x,%01.0f,0xd000c5cb,1,FALSE,0,6,-1000,1000,0,TRUE
 #### A05
-Eng State,x,%01.0f,ADDRESSNEEDED,1,FALSE,0,6,-1000,1000,0,TRUE
+Eng State,x,%01.0f,0xd0012ac7,1,FALSE,0,6,-1000,1000,0,TRUE
 
 ## Optional PIDS recommended for WG tuning
 ### lv_inh_put_ctl_i|"Flag to inhibit PUT Controller I share"
