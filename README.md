@@ -41,6 +41,15 @@ Eng State,x,%01.0f,0xd000c5cb,1,FALSE,0,6,-1000,1000,0,TRUE
 #### A05
 Eng State,x,%01.0f,0xd0012ac7,1,FALSE,0,6,-1000,1000,0,TRUE
 
+### fac_add_maf_cor_cmb|"Combustion Mode Component of the correction factor for basic volumetric efficiency"
+#### S50
+MAF_COR,x/327.6799999999992,%01.1f,0xd0013d58,2,TRUE,-1,1,-100,100,0,TRUE
+#### A05
+MAF_COR,x/327.6799999999992,%01.1f,0xb000bafc,2,TRUE,-1,1,-100,100,0,TRUE
+
+
+
+
 ## Optional PIDS recommended for WG tuning
 ### lv_inh_put_ctl_i|"Flag to inhibit PUT Controller I share"
 #### S50
