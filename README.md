@@ -7,6 +7,8 @@ Additionally it can tune MAF_STD tables, which can help with fuel trims
 ----
 ## How to use WG Tuner
 
+https://youtu.be/12v1qIHKL5o
+
 1. Click the YakTuner.exe
 1. Follow the prompts, selecting Tune WG. Plots are optional, and a bad idea if you have more than a single pull log.
 2. Change first row of variables to match your logs if necessary.(I_INH is optional)
