@@ -1,0 +1,2 @@
+LOG NAME (Change THESE),Boost (psi),DV Position (%),Engine Speed (rpm),Eng State (),Exh Flow Factor (),Intake Flow Fact (),Lambda (),Lambda SP (),MAF_COR (),MAP (kpa),Pedal Pos (%),PUT SP (kpa),PUT (kpa),STFT (%),LTFT (%),Valve Lift Pos (),WG Pos Final (%),WG Pos Base (%),PUT I Inhibit ()
+Variable NAME,BOOST,DV,RPM,EngState,EFF,IFF,LAMBDA,LAMBDA_SP,MAF_COR,MAP,Pedal,PUTSP,PUT,STFT,LTFT,VVL,WG_Final,WG_Base,I_INH
