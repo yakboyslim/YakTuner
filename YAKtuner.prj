@@ -3,7 +3,7 @@
     <param.appname>YAKtuner</param.appname>
     <param.icon />
     <param.icons />
-    <param.version>1.0</param.version>
+    <param.version>1.1</param.version>
     <param.authnamewatermark>Sam Crouse</param.authnamewatermark>
     <param.email />
     <param.company />
@@ -38,14 +38,13 @@
     <param.example />
     <param.help.text>Syntax 
 	 YAKtuner -? 
-	 YAKtuner log wgxaxis wgyaxis logvars plot 
+	 YAKtuner log wgxaxis wgyaxis logvars plot WGlogic 
  Input Arguments 
 	 -?  print help on how to use the application 
-	 log wgxaxis wgyaxis logvars plot  input arguments</param.help.text>
+	 log wgxaxis wgyaxis logvars plot WGlogic  input arguments</param.help.text>
     <unset>
       <param.icon />
       <param.icons />
-      <param.version />
       <param.email />
       <param.company />
       <param.summary />
@@ -82,12 +81,10 @@
     </fileset.main>
     <fileset.resources />
     <fileset.package>
-      <file>${PROJECT_ROOT}\MAF_example.csv</file>
       <file>${PROJECT_ROOT}\variables.csv</file>
-      <file>${PROJECT_ROOT}\x_axis.csv</file>
-      <file>${PROJECT_ROOT}\y_axis.csv</file>
     </fileset.package>
     <fileset.depfun>
+      <file>${PROJECT_ROOT}\BinRead.m</file>
       <file>${PROJECT_ROOT}\customcolormap.m</file>
       <file>${PROJECT_ROOT}\getcurrentdir.m</file>
       <file>${PROJECT_ROOT}\lscatter.m</file>

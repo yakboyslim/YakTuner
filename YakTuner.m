@@ -6,45 +6,51 @@ close all
 
 varconv=readtable(fullfile(getcurrentdir,"variables.csv"),Delimiter=',',TextType='string',ReadVariableNames=false);
 
-wgxaxis=csvread(fullfile(getcurrentdir,"x_axis.csv"));
-wgyaxis=csvread(fullfile(getcurrentdir,"y_axis.csv"));
+% wgxaxis=csvread(fullfile(getcurrentdir,"x_axis.csv"));
+% wgyaxis=csvread(fullfile(getcurrentdir,"y_axis.csv"));
 
-fig = uifigure('Name','DO NOT CLOSE THIS TABLE USING THE X, USE CONTINUE BUTTON',"Position",[500 500 400 200]);
+fig = uifigure('Name','DO NOT CLOSE THIS TABLE USING THE X, USE CONTINUE BUTTON',"Position",[500 500 400 340]);
 cbx1 = uicheckbox(fig,"Text","Tune WG?",'Position',[20 160 100 30]);
-cbx2 = uicheckbox(fig,"Text","Plot WG? Adds considerable time for large logs",'Position',[40 130 300 30]);
+cbx2 = uicheckbox(fig,"Text","Plot WG? ",'Position',[40 130 100 30]);
+cbx6 = uicheckbox(fig,"Text","SWG? ",'Position',[160 130 100 30]);
 cbx3 = uicheckbox(fig,"Text","Tune MAF?",'Position',[140 160 100 30]);
-cbx4 = uicheckbox(fig,"Text","Edit variable conversion and axis tables?",'Position',[20 100 350 30]);
+cbx7 = uicheckbox(fig,"Text","S50",'Position',[20 100 100 30]);
+cbx8 = uicheckbox(fig,"Text","A05",'Position',[140 100 100 30]);
 cbx5 = uicheckbox(fig,"Text","Output results to CSV?",'Position',[20 70 350 30]);
+lbl1 = uilabel(fig,"Text",'Variables','Position',[20 300 360 30]);
+uit1 = uitable(fig, "Data",varconv, "Position",[20 200 360 100], 'ColumnEditable',true);
 c = uicontrol(fig,'String','CONTINUE','Callback','uiresume(fig)')
 uiwait(fig)
 WGtune = cbx1.Value
 MAFtune = cbx3.Value
 plot = cbx2.Value
-edit = cbx4.Value
 save = cbx5.Value
+WGlogic = cbx6.Value
+S50 = cbx7.Value
+A05 = cbx8.Value
+varconv = uit1.Data;
+writetable(varconv,fullfile(getcurrentdir,"variables.csv"),'WriteVariableNames',false)
 close(fig)
 
-% edit = questdlg('Edit variable conversion and axis tables?','Edit?','Yes','No','Yes');
-if edit == 1
-    figedit = uifigure('Name','DO NOT CLOSE THIS TABLE USING THE X, USE CONTINUE BUTTON',"Position",[500 500 760 500]);
-    lbl1 = uilabel(figedit,"Text",'Variables','Position',[20 450 720 30]);
-    uit1 = uitable(figedit, "Data",varconv, "Position",[20 350 720 100], 'ColumnEditable',true);
-    lbl2 = uilabel(figedit,"Text",'WG X Axis','Position',[20 290 720 30]);
-    uit2 = uitable(figedit, "Data",wgxaxis, "Position",[20 210 720 80], 'ColumnEditable',true);
-    lbl3 = uilabel(figedit,"Text",'WG Y Axis','Position',[20 150 720 30]);
-    uit3 = uitable(figedit, "Data",wgyaxis, "Position",[20 70 720 80], 'ColumnEditable',true);
-    c = uicontrol(figedit,'String','CONTINUE','Callback','uiresume(figedit)')
-    uiwait(figedit)    
-    varconv = uit1.Data;
-    wgxaxis = uit2.Data;
-    wgyaxis = uit3.Data;
-    writetable(varconv,fullfile(getcurrentdir,"variables.csv"),'WriteVariableNames',false)
-    writematrix(wgxaxis,fullfile(getcurrentdir,"x_axis.csv"))
-    writematrix(wgyaxis,fullfile(getcurrentdir,"y_axis.csv"))
-    close(figedit)
-end
-
-
+% % edit = questdlg('Edit variable conversion and axis tables?','Edit?','Yes','No','Yes');
+% if edit == 1
+%     figedit = uifigure('Name','DO NOT CLOSE THIS TABLE USING THE X, USE CONTINUE BUTTON',"Position",[500 500 760 500]);
+%     lbl1 = uilabel(figedit,"Text",'Variables','Position',[20 450 720 30]);
+%     uit1 = uitable(figedit, "Data",varconv, "Position",[20 350 720 100], 'ColumnEditable',true);
+% %     lbl2 = uilabel(figedit,"Text",'WG X Axis','Position',[20 290 720 30]);
+% %     uit2 = uitable(figedit, "Data",wgxaxis, "Position",[20 210 720 80], 'ColumnEditable',true);
+% %     lbl3 = uilabel(figedit,"Text",'WG Y Axis','Position',[20 150 720 30]);
+% %     uit3 = uitable(figedit, "Data",wgyaxis, "Position",[20 70 720 80], 'ColumnEditable',true);
+%     c = uicontrol(figedit,'String','CONTINUE','Callback','uiresume(figedit)')
+%     uiwait(figedit)    
+%     varconv = uit1.Data;
+% %     wgxaxis = uit2.Data;
+% %     wgyaxis = uit3.Data;
+%     writetable(varconv,fullfile(getcurrentdir,"variables.csv"),'WriteVariableNames',false)
+% %     writematrix(wgxaxis,fullfile(getcurrentdir,"x_axis.csv"))
+% %     writematrix(wgyaxis,fullfile(getcurrentdir,"y_axis.csv"))
+%     close(figedit)
+% end
 
 varconv=table2array(varconv);
 
@@ -68,6 +74,33 @@ if iscell(fileopen)
     end
 end
 
+[filebin,pathbin]=uigetfile('*.bin','Select Bin File');
+bin=fopen(fullfile(pathbin,filebin));
+
+if S50==1
+    address=[0x24B669 0x24B62A 0x24BB66 0x21974A 0x2196FC]
+elseif A05==1
+    address=[0x277EDF 0x277EA0 0x27837C 0x23D0E0 0x23D092]
+else
+    errordlg('Must select S50 or A05')
+end
+rows=[12 1 1 1 1]
+cols=[8 12 8 10 16]
+offset=[128 0 0 0 0]
+res=[5.12 12.06 1 16384 16384]
+if WGlogic==1
+    req(4:5)=1
+end
+prec=["uint8" "uint16" "uint16" "uint16" "uint16"]
+req={address rows cols offset res prec}
+
+output = BinRead(bin,req)
+wgxaxis=output{5}
+wgyaxis=output{4}
+mafxaxis=output{3}
+mafyaxis=output{2}
+currentMAF=output{1}
+
 %% Convert Variables
 logvars = log.Properties.VariableNames;
 for i=2:width(varconv)
@@ -79,7 +112,7 @@ end
 logvars = log.Properties.VariableNames;
 
 if WGtune == 1
-    [Res_1,Res_0] = WG(log,wgxaxis,wgyaxis,logvars,plot)
+    [Res_1,Res_0] = WG(log,wgxaxis,wgyaxis,logvars,plot,WGlogic)
     if save ==1
         writetable(Res_1,fullfile(pathopen,"VVL1 Results.csv"),'WriteRowNames',true);
         writetable(Res_0,fullfile(pathopen,"VVL0 Results.csv"),'WriteRowNames',true);
@@ -87,29 +120,22 @@ if WGtune == 1
 end
 
 if MAFtune == 1
-    Res_MAF = MAF(log,logvars)
+    Res_MAF = MAF(log,mafxaxis,mafyaxis,currentMAF,logvars)
     if save == 1
         writetable(Res_MAF,fullfile(pathopen,"MAF_STD Results.csv"),'WriteRowNames',true);
     end
 end
 
-
-
-
-
-
-
-
-function [Res_1,Res_0] = WG(log,wgxaxis,wgyaxis,logvars,plot)
+function [Res_1,Res_0] = WG(log,wgxaxis,wgyaxis,logvars,plot,WGlogic)
 
 exhlabels=string(wgxaxis);
 intlabels=string(wgyaxis);
 
 %% Determine SWG/FF
 
-WGlogic = questdlg('Are you using FeedForward or SWG?','WG Logic','FF','SWG','FF');
+% WGlogic = questdlg('Are you using FeedForward or SWG?','WG Logic','FF','SWG','FF');
 
-if strcmp(WGlogic,'SWG')
+if WGlogic==1
     log.EFF=log.RPM
     log.IFF=log.PUTSP
     wgyaxis=wgyaxis/10
@@ -196,7 +222,7 @@ columns0=columns1
 for i=1:height(log_VVL1)
    weight=abs(log_VVL1.deltaPUT(i))*(0.5-abs(log_VVL1.EFF(i)-log_VVL1.X(i)))*(0.5-abs(log_VVL1.IFF(i)-log_VVL1.Y(i)));
    SUM1(log_VVL1.Y(i),log_VVL1.X(i))=SUM1(log_VVL1.Y(i),log_VVL1.X(i))+weight*log_VVL1.WGNEED(i);
-   COUNT1(log_VVL1.Y(i),log_VVL1.X(i))=COUNT1(log_VVL1.Y(i),log_VVL1.X(i))+1;
+   COUNT1(log_VVL1.Y(i),log_VVL1.X(i))=COUNT1(log_VVL1.Y(i),log_VVL1.X(i))+weight;
 end
 
 for i=1:length(wgxaxis)
@@ -215,7 +241,7 @@ for j=1:length(wgyaxis)
         end
 end
 data1=COUNT1>0
-AVG1=round(((SUM1./COUNT1)+rows1.*data1+columns1.*data1)/3)/100;
+AVG1=round(((SUM1./COUNT1)+rows1.*data1+columns1.*data1)/3)/100
 Res_1=array2table(AVG1,'VariableNames',exhlabels,'RowNames',intlabels);
 
 %% Discretize VVL0
@@ -341,9 +367,9 @@ s = uistyle("BackgroundColor",'gr');
 addStyle(uit,s,"cell",[row,col]);
 end
 
-function [Res_MAF] = MAF(log,logvars)
-[filestock,pathstock]=uigetfile('*.csv','Select Stock MAF_STD Table CSV File');
-current=csvread(fullfile(pathstock,filestock))
+function [Res_MAF] = MAF(log,mafxaxis,mafyaxis,current,logvars)
+% [filestock,pathstock]=uigetfile('*.csv','Select Stock MAF_STD Table CSV File');
+% current=csvread(fullfile(pathstock,filestock))
 
 prompt = {'Maximum confidence:','Minimum count to discard:','Count for max confidence:'};
 dlgtitle = 'Inputs';
@@ -365,29 +391,29 @@ log(log.EngState<2,:) = [];
 log(log.EngState>4,:) = [];
 %% Read Axis Values
 % stock=csvread(fullfile(getcurrentdir,"VE_stock.csv"))
-xaxis=current(1,2:width(current))
-yaxis=reshape(current(2:height(current),1),1,[])
-xlabels=string(xaxis)
-ylabels=string(yaxis)
-current(1,:)=[]
-current(:,1)=[]
+% mafxaxis=current(1,2:width(current))
+% mafyaxis=reshape(current(2:height(current),1),1,[])
+xlabels=string(mafxaxis)
+ylabels=string(mafyaxis)
+% current(1,:)=[]
+% current(:,1)=[]
 %% Create Bins
 
 xedges(1)=0;
-xedges(length(xaxis)+1)=inf;
-for i=1:length(xaxis)-1;
-    xedges(i+1)=(xaxis(i)+xaxis(i+1))/2;
+xedges(length(mafxaxis)+1)=inf;
+for i=1:length(mafxaxis)-1;
+    xedges(i+1)=(mafxaxis(i)+mafxaxis(i+1))/2;
 end
 
 yedges(1)=0;
-yedges(length(yaxis)+1)=inf;
-for i=1:length(yaxis)-1;
-    yedges(i+1)=(yaxis(i)+yaxis(i+1))/2;
+yedges(length(mafyaxis)+1)=inf;
+for i=1:length(mafyaxis)-1;
+    yedges(i+1)=(mafyaxis(i)+mafyaxis(i+1))/2;
 end
 
 %% Initialize matrixes
 
-SUM=zeros(length(yaxis),length(xaxis));
+SUM=zeros(length(mafyaxis),length(mafxaxis));
 COUNT=SUM;
 AVG=SUM;
 
@@ -401,22 +427,22 @@ log.Y=Y;
 columns= zeros(12,8)
 rows=columns
 
-for i=1:length(xaxis)
+for i=1:length(mafxaxis)
         temp=log;
         temp(temp.X~=i,:)=[];
-        columns(:,i) = lsq_lut_piecewise( temp.MAP, temp.ADD_MAF, yaxis )
+        columns(:,i) = lsq_lut_piecewise( temp.MAP, temp.ADD_MAF, mafyaxis )
 end
 
-for j=1:length(yaxis)
+for j=1:length(mafyaxis)
         temp=log;
         temp(temp.Y~=j,:)=[];
-        rows(j,:) = lsq_lut_piecewise( temp.RPM, temp.ADD_MAF, xaxis )          
+        rows(j,:) = lsq_lut_piecewise( temp.RPM, temp.ADD_MAF, mafxaxis )          
 end
 
 blend=(columns+rows)/2
 
-for i=1:length(xaxis)
-    for j=1:length(yaxis)
+for i=1:length(mafxaxis)
+    for j=1:length(mafyaxis)
         temp=log;
         temp(temp.X~=i,:)=[];
         temp(temp.Y~=j,:)=[];
