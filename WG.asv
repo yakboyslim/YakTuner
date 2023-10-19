@@ -30,8 +30,7 @@ log.WGNEED=log.WG_Final-log.deltaPUT.*fudge;
 log.WGCL=log.WG_Final-log.WG_Base;
 
 %% Plot
-if plot==true
-    hold on
+
     for i=1:height(log)
         if log.VVL(i)==1
             if log.WG_Final(i)>98
@@ -78,7 +77,6 @@ if plot==true
     wgxaxis = uit2.Data
     wgyaxis = uit3.Data
     close(figedit)
-end
 
 %% Create Bins
 
@@ -188,8 +186,7 @@ for i=1:length(wgxaxis)
     end
 end
 
-Data1=current-AVG1
-Data1=Data1./Data1
+
 
 Res_1=array2table(AVG1,'VariableNames',exhlabels,'RowNames',intlabels);
 
@@ -232,16 +229,14 @@ for i=1:length(wgxaxis)
             elseif high(j,i)<current(j,i)
                 AVG0(j,i)=(blend0(j,i)+AVGtemp/100)/2
             else
-                AVG0(j,i)=current(j,i)
+                AVG0(j,i)=NaN
             end
         else
-            AVG0(j,i)=current(j,i)
+            AVG0(j,i)=NaN
         end
     end
 end
 
-Data0=current-AVG0
-Data0=Data0./Data0
 
 Res_0=array2table(AVG0,'VariableNames',exhlabels,'RowNames',intlabels);
 
@@ -330,7 +325,7 @@ Res_0=array2table(AVG0,'VariableNames',exhlabels,'RowNames',intlabels);
 fig0 = uifigure('Name','VVL0 WG Results',"Position",[500 500 760 360]);
 uit = uitable(fig0, "Data",Res_0, "Position",[20 20 720 320]);
 
-styleIndices = ~ismissing(Data0);
+styleIndices = ~ismissing(Res_0);
 [row,col] = find(styleIndices);
 s = uistyle("BackgroundColor",'gr');
 addStyle(uit,s,"cell",[row,col]);
@@ -338,7 +333,7 @@ addStyle(uit,s,"cell",[row,col]);
 fig1 = uifigure('Name','VVL1 WG Results',"Position",[500 500 760 360]);
 uit = uitable(fig1, "Data",Res_1, "Position",[20 20 720 320]);
 
-styleIndices = ~ismissing(Data1);
+styleIndices = ~ismissing(Res_1);
 [row,col] = find(styleIndices);
 s = uistyle("BackgroundColor",'gr');
 addStyle(uit,s,"cell",[row,col]);
