@@ -3,7 +3,7 @@
     <param.appname>YAKtuner</param.appname>
     <param.icon />
     <param.icons />
-    <param.version>1.1</param.version>
+    <param.version>2.0</param.version>
     <param.authnamewatermark>Sam Crouse</param.authnamewatermark>
     <param.email />
     <param.company />
@@ -37,11 +37,11 @@
     <param.checkbox>false</param.checkbox>
     <param.example />
     <param.help.text>Syntax 
-	 YAKtuner -? 
-	 YAKtuner log wgxaxis wgyaxis logvars plot WGlogic 
+	  -? 
+	 
  Input Arguments 
 	 -?  print help on how to use the application 
-	 log wgxaxis wgyaxis logvars plot WGlogic  input arguments</param.help.text>
+	 input arguments</param.help.text>
     <unset>
       <param.icon />
       <param.icons />
@@ -87,8 +87,10 @@
       <file>${PROJECT_ROOT}\BinRead.m</file>
       <file>${PROJECT_ROOT}\customcolormap.m</file>
       <file>${PROJECT_ROOT}\getcurrentdir.m</file>
-      <file>${PROJECT_ROOT}\lscatter.m</file>
+      <file>${PROJECT_ROOT}\KNK.m</file>
       <file>${PROJECT_ROOT}\lsq_lut_piecewise.m</file>
+      <file>${PROJECT_ROOT}\MAF.m</file>
+      <file>${PROJECT_ROOT}\WG.m</file>
     </fileset.depfun>
     <build-deliverables>
       <file location="${PROJECT_ROOT}\YAKtuner\for_testing" name="splash.png" optional="false">Y:\Documents\YakTuner\YAKtuner\for_testing\splash.png</file>
