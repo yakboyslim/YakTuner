@@ -10,12 +10,13 @@ if WGlogic==1
     wgyaxis=wgyaxis/10
 end
 
-
+    oldwgyaxis = wgyaxis
+    oldwgxaxis = wgxaxis   
 
 %% Get other inputs
 
-prompt = {'PUT fudge factor:','Minimum pedal:','Maximum PUT delta:','Minimum boost:'};
-dlgtitle = 'Inputs';
+prompt = {'PUT fudge factor:','Minimum pedal (if no PUT_I_INHIBIT):','Maximum PUT delta:','Minimum boost:'};
+dlgtitle = 'WG Inputs';
 dims = [1 50];
 definput = {'0.71','50','10','0'};
 answer = inputdlg(prompt,dlgtitle,dims,definput)
@@ -29,25 +30,36 @@ log.deltaPUT=log.PUT-log.PUTSP;
 log.WGNEED=log.WG_Final-log.deltaPUT.*fudge;
 log.WGCL=log.WG_Final-log.WG_Base;
 
+%% Create Trimmed datasets
+
+log=log;
+if any(contains(logvars,'I_INH'))
+    log(log.I_INH>0,:) = [];
+else
+    log(log.Pedal<minpedal,:) = [];
+end
+
+log(log.DV>50,:) = [];
+log(log.BOOST<minboost,:) = [];
+log(abs(log.deltaPUT)>maxdelta,:) = [];
+log(log.WG_Final>98,:) = [];
+log_WGopen=log;
+
+
 %% Plot
 if plot==true
-    hold on
+    wait=waitbar(0,"Plotting")
     for i=1:height(log)
+        pts(i,:)=[log.EFF(i),log.IFF(i),100,log.deltaPUT(i)];
         if log.VVL(i)==1
-            if log.WG_Final(i)>98
-                c1=scatter(log.EFF(i),log.IFF(i),100,log.deltaPUT(i),"^","filled");
-            else
-                o1=scatter(log.EFF(i),log.IFF(i),100,log.deltaPUT(i),"^");
-            end
+            syms(i)="^";
         else
-            if log.WG_Final(i)>98
-                c0=scatter(log.EFF(i),log.IFF(i),100,log.deltaPUT(i),"o","filled");
-            else
-                o0=scatter(log.EFF(i),log.IFF(i),100,log.deltaPUT(i),"o");
-            end
+            syms(i)="o";
         end
-    end
-    
+        waitbar(i/height(log),wait,"Choosing Points");
+    end    
+    hold on
+
     mycolormap = customcolormap([0 .25 .5 .75 1], {'#9d0142','#f66e45','#ffffff','#65c0ae','#5e4f9f'});
     c = colorbar;
     c.Label.String = 'PUT - PUT SP';
@@ -61,6 +73,16 @@ if plot==true
     xticks(wgxaxis);
     yticks(wgyaxis);
 
+    for i=1:height(log)
+        if mod(i,round(height(log)/1000))==1
+            scatr=scatter(pts(i,1),pts(i,2),pts(i,3),pts(i,4),syms(i));
+        end
+        if mod(i,round(height(log)/100))==1
+            waitbar(i/height(log),wait,"Plotting Points"); 
+        end
+    end
+    close(wait)
+    
     figedit = uifigure('Name','DO NOT CLOSE THIS TABLE USING THE X, USE CONTINUE BUTTON',"Position",[500 500 760 320]);
     lbl2 = uilabel(figedit,"Text",'WG X Axis','Position',[20 290 720 30]);
     uit2 = uitable(figedit, "Data",wgxaxis, "Position",[20 210 720 80], 'ColumnEditable',true);
@@ -98,22 +120,6 @@ end
 exhlabels=string(wgxaxis);
 intlabels=string(wgyaxis);
 
-
-%% Create Trimmed datasets
-
-log=log;
-if any(contains(logvars,'I_INH'))
-    log(log.I_INH>0,:) = [];
-else
-    log(log.Pedal<minpedal,:) = [];
-end
-
-log(log.DV>50,:) = [];
-log(log.BOOST<minboost,:) = [];
-log(abs(log.deltaPUT)>maxdelta,:) = [];
-log_WGopen=log;
-log_WGopen(log_WGopen.WG_Final>98,:) = [];
-
 log_WGopen.X=discretize(log_WGopen.EFF,wgxedges);
 log_WGopen.Y=discretize(log_WGopen.IFF,wgyedges);
 
@@ -122,7 +128,6 @@ log_VVL1=log_WGopen;
 log_VVL1(log_VVL1.VVL~=1,:) = [];
 log_VVL0=log_WGopen;
 log_VVL0(log_VVL0.VVL~=0,:) = [];
-
 
 
 %% Initialize matrixes
@@ -188,6 +193,8 @@ for i=1:length(wgxaxis)
     end
 end
 
+AVG1=round(AVG1*16384)/16384
+
 Data1=current-AVG1
 Data1=Data1./Data1
 
@@ -239,6 +246,8 @@ for i=1:length(wgxaxis)
         end
     end
 end
+
+AVG0=round(AVG0*16384)/16384
 
 Data0=current-AVG0
 Data0=Data0./Data0
