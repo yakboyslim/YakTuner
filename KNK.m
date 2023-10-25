@@ -7,16 +7,19 @@ definput = {'0.75','0.5'};
 answer = inputdlg(prompt,dlgtitle,dims,definput)
 maxadv=str2num(answer{1});
 conf=1-str2num(answer{2});
-map=listdlg('PromptString','Select a SP Map.','SelectionMode','single','ListString',string(1:5));
+map=listdlg('PromptString','Select a SP Map.','SelectionMode','single','ListString',[string(1:5) 'No map switching']);
 
-if S50==1
-    address=[0x27CF1A 0x27D01A 0x27D11A 0x27D21A 0x27D31A]
+if map==6
+    currentIG{1}=zeros(16,16)
 else
-    address=[0x2AFE7A 0x2AFF9A 0x2B00BA 0x2B01DA 0x2B02FA]
+    if S50==1
+        address=[0x27CF1A 0x27D01A 0x27D11A 0x27D21A 0x27D31A]
+    else
+        address=[0x2AFE7A 0x2AFF9A 0x2B00BA 0x2B01DA 0x2B02FA]
+    end
+    req={address(map),16,16,95,2.666666666667,"uint8"}
+    currentIG=BinRead(bin,req)
 end
-
-req={address(map),16,16,95,2.666666666667,"uint8"}
-currentIG=BinRead(bin,req)
 
 %% Create Derived Values
 

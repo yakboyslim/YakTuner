@@ -1,4 +1,4 @@
-function [Res_KNK] = KNK(log,igxaxis,igyaxis,logvars,pathbin,filebin,S50)
+function [Res_KNK] = KNK(log,igxaxis,igyaxis,logvars,bin,S50)
 
 prompt = {'Maximum advance if no knock seen:','Confidence Required to confirm knock:'};
 dlgtitle = 'Knock Inputs';
@@ -7,18 +7,19 @@ definput = {'0.75','0.5'};
 answer = inputdlg(prompt,dlgtitle,dims,definput)
 maxadv=str2num(answer{1});
 conf=1-str2num(answer{2});
-map=listdlg('PromptString','Select a SP Map.','SelectionMode','single','ListString',string(1:5));
+map=listdlg('PromptString','Select a SP Map.','SelectionMode','single','ListString',string([1:5 ));
 
-bin=fopen(fullfile(pathbin,filebin));
-
-if S50==1
-    address=[0x27CF1A 0x27D01A 0x27D11A 0x27D21A 0x27D31A]
+if map==0
+    currentIG=zeros[16,16]
 else
-    address=[]
+    if S50==1
+        address=[0x27CF1A 0x27D01A 0x27D11A 0x27D21A 0x27D31A]
+    else
+        address=[0x2AFE7A 0x2AFF9A 0x2B00BA 0x2B01DA 0x2B02FA]
+    end
+    req={address(map),16,16,95,2.666666666667,"uint8"}
+    currentIG=BinRead(bin,req)
 end
-
-req={address(map),16,16,95,2.666666666667,"uint8"}
-currentIG=BinRead(bin,req)
 
 %% Create Derived Values
 
@@ -114,9 +115,9 @@ AVG(AVG>maxadv)=maxadv
 inter=ceil((AVG)*5.33333333)/5.33333333
 NEW=round((inter)*2.666666666666667)/2.666666666666667
 
-resarray=NEW+currentIG()
+resarray=NEW+currentIG{1}
 
-Res_KNK=array2table(NEW,'VariableNames',xlabels,'RowNames',ylabels)
+Res_KNK=array2table(resarray,'VariableNames',xlabels,'RowNames',ylabels)
 fig3 = uifigure('Name','IG Results',"Position",[500 500 760 360]);
 uit = uitable(fig3, "Data",Res_KNK, "Position",[20 20 720 320]);
 styleIndices = (KR)<0;

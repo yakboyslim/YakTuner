@@ -120,7 +120,9 @@ end
 if isempty(missingvars)==0
     for i=1:length(missingvars)
         pick=listdlg('PromptString',strcat('Select a variable for : ',varconv(2,missingvars(i))),'SelectionMode','single','ListString',cat(2,varconv(1,missingvars(i)),string(logvars)));
-        varconv(1,missingvars(i))=logvars(pick)
+        if pick>1
+            varconv(1,missingvars(i))=logvars(pick-1)
+        end
         log=renamevars(log,varconv(1,missingvars(i)),varconv(2,missingvars(i)))
     end
     varconv=array2table(varconv)
