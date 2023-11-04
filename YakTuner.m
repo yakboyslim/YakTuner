@@ -18,8 +18,8 @@ cbx9 = uicheckbox(fig,"Text","Tune Ignition?",'Position',[260 160 100 30]);
 cbx7 = uicheckbox(fig,"Text","S50",'Position',[20 100 100 30],'Value',1);
 cbx8 = uicheckbox(fig,"Text","A05",'Position',[140 100 100 30]);
 cbx5 = uicheckbox(fig,"Text","Output results to CSV?",'Position',[20 70 350 30]);
-% lbl1 = uilabel(fig,"Text",'Variables','Position',[20 300 460 30]);
-% uit1 = uitable(fig, "Data",varconv, "Position",[20 200 460 100], 'ColumnEditable',true);
+cbx10 = uicheckbox(fig,"Text","Reset Variables?",'Position',[260 70 350 30]);
+
 c = uicontrol(fig,'String','CONTINUE','Callback','uiresume(fig)') 
 uiwait(fig)
 WGtune = cbx1.Value
@@ -30,6 +30,7 @@ save = cbx5.Value
 WGlogic = cbx6.Value
 S50 = cbx7.Value
 A05 = cbx8.Value
+var_reset = cbx10.Value
 % varconv = uit1.Data;
 % writetable(varconv,fullfile(getcurrentdir,"variables.csv"),'WriteVariableNames',false)
 close(fig)
@@ -109,17 +110,21 @@ logvars = log.Properties.VariableNames;
 
 missingvars=[]
 
-for i=2:width(varconv)
-    if any(contains(logvars,varconv(1,i)))
-        log=renamevars(log,varconv(1,i),varconv(2,i));
-    else
-        missingvars(end+1) = i;
+if var_reset==1
+    missingvars=[2:width(varconv)]
+else
+    for i=2:width(varconv)
+        if any(contains(logvars,varconv(1,i)))
+            log=renamevars(log,varconv(1,i),varconv(2,i));
+        else
+            missingvars(end+1) = i;
+        end
     end
 end
 
 if isempty(missingvars)==0
     for i=1:length(missingvars)
-        pick=listdlg('PromptString',strcat('Select a variable for : ',varconv(2,missingvars(i))),'SelectionMode','single','ListString',cat(2,varconv(1,missingvars(i)),string(logvars)));
+        pick=listdlg('PromptString',{"Select a variable for:  ",varconv(3,missingvars(i)),""},'SelectionMode','single','ListString',cat(2,varconv(1,missingvars(i)),string(logvars)));
         if pick>1
             varconv(1,missingvars(i))=logvars(pick-1)
         end
@@ -130,6 +135,9 @@ if isempty(missingvars)==0
 end
 
 logvars = log.Properties.VariableNames;
+
+
+%% Tunes
 
 if WGtune == 1
     [Res_1,Res_0] = WG(log,wgxaxis,wgyaxis,currentWG0,currentWG1,logvars,plot,WGlogic)
