@@ -15,7 +15,7 @@ end
 
 %% Get other inputs
 
-prompt = {'PUT fudge factor:','Minimum pedal (if no PUT_I_INHIBIT):','Maximum PUT delta:','Minimum boost:'};
+prompt = {'PUT fudge factor:','Minimum pedal (if no PUT_I_INHIBIT):','Maximum PUT delta:','Minimum Boost:'};
 dlgtitle = 'WG Inputs';
 dims = [1 50];
 definput = {'0.71','50','10','0'};
@@ -33,14 +33,21 @@ log.WGCL=log.WG_Final-log.WG_Base;
 %% Create Trimmed datasets
 
 log=log;
+
 if any(contains(logvars,'I_INH'))
     log(log.I_INH>0,:) = [];
 else
     log(log.Pedal<minpedal,:) = [];
 end
 
-log(log.DV>50,:) = [];
-log(log.BOOST<minboost,:) = [];
+if any(contains(logvars,'DV'))
+    log(log.DV>50,:) = [];
+end
+
+if any(contains(logvars,'BOOST'))
+    log(log.BOOST<minboost,:) = [];
+end
+
 log(abs(log.deltaPUT)>maxdelta,:) = [];
 log(log.WG_Final>98,:) = [];
 log_WGopen=log;
