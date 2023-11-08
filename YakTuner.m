@@ -17,6 +17,7 @@ cbx3 = uicheckbox(fig,"Text","Tune MAF?",'Position',[140 160 100 30]);
 cbx9 = uicheckbox(fig,"Text","Tune Ignition?",'Position',[260 160 100 30]);
 cbx7 = uicheckbox(fig,"Text","S50",'Position',[20 100 100 30],'Value',1);
 cbx8 = uicheckbox(fig,"Text","A05",'Position',[140 100 100 30]);
+cbx11 = uicheckbox(fig,"Text","V30",'Position',[260 100 100 30]);
 cbx5 = uicheckbox(fig,"Text","Output results to CSV?",'Position',[20 70 350 30]);
 cbx10 = uicheckbox(fig,"Text","Reset Variables?",'Position',[260 70 350 30]);
 
@@ -30,6 +31,7 @@ save = cbx5.Value
 WGlogic = cbx6.Value
 S50 = cbx7.Value
 A05 = cbx8.Value
+V30 = cbx11.Value
 var_reset = cbx10.Value
 % varconv = uit1.Data;
 % writetable(varconv,fullfile(getcurrentdir,"variables.csv"),'WriteVariableNames',false)
@@ -61,10 +63,14 @@ end
 [filebin,pathbin]=uigetfile('*.bin','Select Bin File');
 bin=fopen(fullfile(pathbin,filebin));
 
+%% Parse bin
+
 if S50==1
     address=[0x24B642 0x24B62A 0x24BB66 0x21974A 0x2196FC 0x2199F6 0x219B36 0x23CDBC 0x23CE5A]
 elseif A05==1
     address=[0x277EB8 0x277EA0 0x27837C 0x23D0E0 0x23D092 0x23D368 0x23D4A8 0x267A3E 0x267ADE]
+elseif V30==1
+    address=[0x22D926 0x22D90E 0x22DE5C 0x212E76 0x212E28 0x213134 0x213274 0x230634 0x2306D2]
 else
     errordlg('Must select S50 or A05')
 end
@@ -73,7 +79,8 @@ cols=[39 12 8 10 16 16 16 16 16]
 offset=[0 0 0 0 0 32768 32768 0 0]
 res=[1 12.06 1 16384 16384 16384 16384 23.59071274298056 1]
 if WGlogic==1
-    req(4:5)=1
+    res(4)=1/.082917524986648
+    res(5)=1
 end
 prec=["uint8" "uint16" "uint16" "uint16" "uint16" "uint16" "uint16" "uint16" "uint16"]
 req={address rows cols offset res prec}
@@ -94,8 +101,10 @@ if S50==1
     address=[0x24B669 0x24B6C9 0x24B729 0x24B789]
 elseif A05==1
     address=[0x277EDF 0x277F3F 0x277F9F 0x277FFF]
+elseif V30==1
+    address=[0x22D94D 0x22D9AD 0x22DA0D 0x22DA6D]
 else
-    errordlg('Must select S50 or A05')
+    errordlg('Must select S50, A05, or V30')
 end
 rows=[12 12 12 12]
 cols=[8 8 8 8]
@@ -158,7 +167,7 @@ if MAFtune == 1
 end
 
 if IGtune == 1
-    Res_KNK = KNK(log,igxaxis,igyaxis,logvars,bin,S50)
+    Res_KNK = KNK(log,igxaxis,igyaxis,logvars,bin,S50,A05,V30)
     if save == 1
         writetable(Res_KNK,fullfile(pathopen,"KNK Results.csv"),'WriteRowNames',true);
     end

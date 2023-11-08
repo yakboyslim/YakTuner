@@ -1,4 +1,4 @@
-function [Res_KNK] = KNK(log,igxaxis,igyaxis,logvars,bin,S50)
+function [Res_KNK] = KNK(log,igxaxis,igyaxis,logvars,bin,S50,A05,V30)
 
 prompt = {'Maximum advance if no knock seen:','Confidence Required to confirm knock:'};
 dlgtitle = 'Knock Inputs';
@@ -14,9 +14,11 @@ if map==6
 else
     if S50==1
         address=[0x27CF1A 0x27D01A 0x27D11A 0x27D21A 0x27D31A]
-    else
+    elseif A05==1
         address=[0x2AFE7A 0x2AFF9A 0x2B00BA 0x2B01DA 0x2B02FA]
-    end
+    elseif V30==1
+        address=[0x13CF1A 0x13D01A 0x13D11A 0x13D21A 0x13D31A]
+    end 
     req={address(map),16,16,95,2.666666666667,"uint8"}
     currentIG=BinRead(bin,req)
 end

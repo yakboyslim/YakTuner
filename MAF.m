@@ -20,7 +20,7 @@ if ~any(contains(logvars,'LAM_DIF'))
 end
 
 if any(contains(logvars,'FAC_LAM_OUT'))
-    log.ADD_MAF=log.FAC_LAM_OUT-log.LAM_DIF 
+    log.ADD_MAF=log.FAC_LAM_OUT+log.LTFT-log.LAM_DIF 
 else
     log.ADD_MAF=log.STFT+log.LTFT-log.LAM_DIF 
 end
