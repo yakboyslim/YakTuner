@@ -6,8 +6,8 @@ function [Res_1,Res_0] = WG(log,wgxaxis,wgyaxis,currentWG0,currentWG1,logvars,pl
 
 if WGlogic==1
     log.EFF=log.RPM
-    log.IFF=log.PUTSP
-    wgyaxis=wgyaxis/10
+    log.IFF=log.PUTSP*10
+%     wgyaxis=wgyaxis/10
 end
 
     oldwgyaxis = wgyaxis
@@ -136,7 +136,6 @@ log_VVL1(log_VVL1.VVL~=1,:) = [];
 log_VVL0=log_WGopen;
 log_VVL0(log_VVL0.VVL~=0,:) = [];
 
-
 %% Initialize matrixes
 
 SUM1=zeros(length(wgyaxis),length(wgxaxis));
@@ -151,7 +150,6 @@ columns1= zeros(10,16)
 rows1=columns1
 rows0=rows1
 columns0=columns1
-
 
 %% Discretize VVL1
 
