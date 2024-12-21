@@ -136,8 +136,9 @@ if isempty(missingvars)==0
         pick=listdlg('PromptString',{"Select a variable for:  ",varconv(3,missingvars(i)),""},'SelectionMode','single','ListString',cat(2,varconv(1,missingvars(i)),string(logvars)));
         if pick>1
             varconv(1,missingvars(i))=logvars(pick-1)
+            log=renamevars(log,varconv(1,missingvars(i)),varconv(2,missingvars(i)))
         end
-        log=renamevars(log,varconv(1,missingvars(i)),varconv(2,missingvars(i)))
+%         log=renamevars(log,varconv(1,missingvars(i)),varconv(2,missingvars(i)))
     end
     varconv=array2table(varconv)
     writetable(varconv,fullfile(getcurrentdir,"variables.csv"),'WriteVariableNames',false)
