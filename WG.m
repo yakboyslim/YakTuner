@@ -81,10 +81,10 @@ if plot==true
     yticks(wgyaxis);
 
     for i=1:height(log)
-        if mod(i,round(height(log)/1000))==1
+        if mod(i,ceil(height(log)/1000))==0
             scatr=scatter(pts(i,1),pts(i,2),pts(i,3),pts(i,4),syms(i));
         end
-        if mod(i,round(height(log)/100))==1
+        if mod(i,ceil(height(log)/100))==0
             waitbar(i/height(log),wait,"Plotting Points"); 
         end
     end
@@ -185,7 +185,9 @@ for i=1:length(wgxaxis)
             low(j,i)=ci(1,1)
             high(j,i)=ci(2,1)
 %             AVGtemp=0
-            if low(j,i)>current(j,i)
+            if isnan(current(j,i))
+                AVG1(j,i)=(blend1(j,i)+AVGtemp/100)/2
+            elseif low(j,i)>current(j,i)
                 AVG1(j,i)=(blend1(j,i)+AVGtemp/100)/2
             elseif high(j,i)<current(j,i)
                 AVG1(j,i)=(blend1(j,i)+AVGtemp/100)/2
@@ -239,7 +241,9 @@ for i=1:length(wgxaxis)
             low(j,i)=ci(1,1)
             high(j,i)=ci(2,1)
 %             AVGtemp=0
-            if low(j,i)>current(j,i)
+            if isnan(current(j,i))
+                AVG0(j,i)=(blend0(j,i)+AVGtemp/100)/2                
+            elseif low(j,i)>current(j,i)
                 AVG0(j,i)=(blend0(j,i)+AVGtemp/100)/2
             elseif high(j,i)<current(j,i)
                 AVG0(j,i)=(blend0(j,i)+AVGtemp/100)/2
