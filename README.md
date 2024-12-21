@@ -1,7 +1,7 @@
-# YakWG
+# YakTUNER
 ----
 ## What's it do?
-Opens logs and bins. Suggests tune changes for WG, MAF and IGN.
+Opens logs and bins. Suggests tune changes for WG and MAF. IGN coming soon
 
 ----
 
@@ -11,6 +11,5 @@ In "PID LISTS" folder.
 ----
 
 ## Installation
-Install by opening the .exe from the releases folder. Alternatively you could copy the "/YAKtuner/for_redistribution_files_only" contents and run, but you must have Matlab2022b runtime environment installed as well.
-
+Install by opening copying all files into one folder and running the YAKtuner.py using python. Installer is planned for those not wanting to mess with python, but not here yet.
 ----
