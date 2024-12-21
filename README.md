@@ -1,7 +1,7 @@
-# YakWG
+# YakTUNER
 ----
 ## What's it do?
-Opens logs and bins. Suggests tune changes for WG, MAF and IGN.
+Opens logs and bins. Suggests tune changes for WG and MAF. IGN coming soon
 
 ----
 
