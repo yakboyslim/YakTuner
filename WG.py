@@ -2,12 +2,9 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
     import numpy as np
     import pandas as pd
     from scipy import stats
-    from scipy.interpolate import interp2d
     import tkinter as tk
     from tkinter import simpledialog
     from pandastable import Table
-    import matplotlib.pyplot as plt
-    from matplotlib.colors import LinearSegmentedColormap
     import pwlf
 
     # Determine SWG/FF
