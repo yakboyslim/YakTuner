@@ -5,7 +5,6 @@ def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes, logvars):
     from tkinter import simpledialog
     import tkinter as tk
     from pandastable import Table
-    import matplotlib.pyplot as plt
     import pwlf
 
     # Create input dialog for confidence
