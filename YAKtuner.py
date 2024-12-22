@@ -1,11 +1,14 @@
 # Read Log
 import os
-import pandas as pd
-import numpy as np
 import tkinter as tk
 from tkinter import filedialog, messagebox
+
 import customtkinter as ctk
+import numpy as np
+import pandas as pd
+
 import BinRead
+import KNK
 import MAF
 import WG
 
@@ -30,9 +33,9 @@ cbx6.place(x=160, y=50)
 
 cbx3 = ctk.CTkCheckBox(root, text="Tune MAF?")
 cbx3.place(x=140, y=20)
-#
-# cbx9 = ctk.CTkCheckBox(root, text="Tune Ignition?")
-# cbx9.place(x=260, y=20)
+
+cbx9 = ctk.CTkCheckBox(root, text="Tune Ignition?")
+cbx9.place(x=260, y=20)
 
 cbx7 = ctk.CTkCheckBox(root, text="S50")
 cbx7.place(x=20, y=100)
@@ -63,7 +66,7 @@ root.mainloop()
 # Get checkbox values
 WGtune = cbx1.get()
 MAFtune = cbx3.get()
-# IGtune = cbx9.get()
+IGtune = cbx9.get()
 # plot = cbx2.get()
 plot = False
 save = cbx5.get()
@@ -124,6 +127,7 @@ with open(bin_path, 'rb') as bin_file:
     # req = {"address": address, "rows": rows, "cols": cols, "offset": offset, "res": res, "prec": prec}
     req = [address, rows, cols, offset, res, prec]
     output = BinRead.bin_read(bin_file, req)
+
     combmodes = np.ravel(output[0])
     mafyaxis = np.ravel(output[1])
     mafxaxis = np.ravel(output[2])
@@ -210,8 +214,8 @@ if MAFtune:
             MAFresults[f"IDX{idx}"].to_csv(
                 os.path.join(os.path.dirname(file_paths[0]), f"MAF_STD[{idx}] Results.csv")
             )
-#
-# if IGtune:
-#     Res_KNK = KNK(log, igxaxis, igyaxis, logvars, bin_file, S50, A05, V30)
-#     if save:
-#         Res_KNK.to_csv(os.path.join(os.path.dirname(file_paths[0]), "KNK Results.csv"))
+
+if IGtune:
+    Res_KNK = KNK.KNK(log, igxaxis, igyaxis, logvars, bin_file, S50, A05, V30, bin_path)
+    if save:
+        Res_KNK.to_csv(os.path.join(os.path.dirname(file_paths[0]), "KNK Results.csv"))
