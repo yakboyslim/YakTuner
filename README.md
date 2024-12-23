@@ -1,7 +1,7 @@
 # YakTUNER
 ----
 ## What's it do?
-Opens logs and bins. Suggests tune changes for WG and MAF. IGN coming soon
+Opens logs and bins. Suggests tune changes for WG, MAF (for tuning out fuel trims) and IGN
 
 ----
 
@@ -11,5 +11,5 @@ In "PID LISTS" folder.
 ----
 
 ## Installation
-Install by opening copying all files into one folder and running the YAKtuner.py using python. Installer is planned for those not wanting to mess with python, but not here yet.
+Install by downloading from releases. The two files (YAKtuner.exe and variables.csv) can be placed anywhere, but must be in the same folder. Run by double clicking the executable.
 ----
