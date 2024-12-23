@@ -4,9 +4,12 @@ def KNK(log, igxaxis, igyaxis, logvars, bin, S50, A05, V30, bin_path):
     from scipy import stats
     import tkinter as tk
     from tkinter import simpledialog
+    import matplotlib
     import matplotlib.pyplot as plt
     from scipy.stats import norm
+    from pandastable import Table
     import BinRead
+    matplotlib.use('TkAgg')
 
     # Create input dialog
     root = tk.Tk()
@@ -131,20 +134,87 @@ def KNK(log, igxaxis, igyaxis, logvars, bin, S50, A05, V30, bin_path):
     resarray = NEW + currentIG[0]
     Res_KNK = pd.DataFrame(resarray, columns=xlabels, index=ylabels)
 
+
+    class ColoredTable(Table):
+        def __init__(self, parent=None, **kwargs):
+            Table.__init__(self, parent, **kwargs)
+
+        def color_cells(self, array1):
+            """Color cells based on comparison of two arrays"""
+
+            # Reset all colors first
+            self.resetColors()
+
+            # Get the current DataFrame
+            df = self.model.df
+
+            # Ensure arrays are the same shape as the DataFrame
+            if array1.shape != df.shape:
+                raise ValueError("Arrays must have the same shape as the DataFrame")
+
+            # Create color mapping
+            colors = {
+                'higher': '#90EE90',  # light green
+                'lower': '#FFB6C1',  # light red
+                'equal': '#FFFFFF'  # white
+            }
+
+            # Compare arrays and set colors
+            for i in range(array1.shape[0]):
+                for j in range(array1.shape[1]):
+                    if array1[i, j] > 0:
+                        self.setRowColors(rows=[i], cols=[j], clr=colors['higher'])
+                    elif array1[i, j] < 0:
+                        self.setRowColors(rows=[i], cols=[j], clr=colors['lower'])
+                    else:
+                        self.setRowColors(rows=[i], cols=[j], clr=colors['equal'])
+
+            self.redraw()
+
+    # Create the main window
+    W1 = tk.Toplevel()
+    W1.title("SP IGN Table")
+    W1.minsize(500, 500)
+
+    # Create a frame to hold the table
+    frame1 = tk.Frame(W1)
+    frame1.pack(fill='both', expand=True)
+
+    tk.Label(frame1, text="VVl1")
+
+    # Create the table and add it to the frame
+    pt1 = ColoredTable(frame1, dataframe=Res_KNK, showtoolbar=True, showstatusbar=True)
+    pt1.editable = False
+    pt1.show()
+    pt1.color_cells(NEW)
+    pt1.rowselectedcolor = None
+
+    def on_closing():
+        W1.quit()
+        W1.destroy()
+
+    W1.protocol("WM_DELETE_WINDOW", on_closing)
+
+
+    # Start the main loop
+    W1.mainloop()
+
+
     # Plotting
+    # fig, ax = plt.subplots()
+    # plottemp = log[log['knkoccurred'] == 1]
+    # ax.scatter(plottemp['RPM'], plottemp['MAF'], s=abs(plottemp['KNKAVG']) * 100, c=plottemp['singlecyl'], cmap='Set1')
+
     plt.figure()
     plottemp = log[log['knkoccurred'] == 1]
-    scatter = plt.scatter(plottemp['RPM'], plottemp['MAF'],
-                          s=abs(plottemp['KNKAVG']) * 100,
-                          c=plottemp['singlecyl'],
-                          cmap='Set1')
-    plt.colorbar(scatter, label='Cylinder', ticks=[1, 2, 3, 4])
-    plt.gca().invert_yaxis()
-    plt.xlabel('RPM')
-    plt.ylabel('MAF')
-    plt.grid(True)
-    plt.gca().xaxis.set_label_position('top')
-    plt.gca().xaxis.set_ticks_position('top')
-    plt.show()
+    plt.scatter(plottemp['RPM'], plottemp['MAF'], s=abs(plottemp['KNKAVG']) * 100, c=plottemp['singlecyl'], cmap='Set1')
+    # plt.colorbar(scatter, label='Cylinder', ticks=[1, 2, 3, 4])
+    # plt.gca().invert_yaxis()
+    # plt.xlabel('RPM')
+    # plt.ylabel('MAF')
+    # plt.grid(True)
+    # plt.gca().xaxis.set_label_position('top')
+    # plt.gca().xaxis.set_ticks_position('top')
+    # plt.show()
 
     return Res_KNK
