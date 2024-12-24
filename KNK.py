@@ -1,4 +1,4 @@
-def KNK(log, igxaxis, igyaxis, logvars, bin, S50, A05, V30, bin_path):
+def KNK(log, igxaxis, igyaxis, logvars, bin, IGNmaps, bin_path):
     import numpy as np
     import pandas as pd
     from scipy import stats
@@ -50,16 +50,7 @@ def KNK(log, igxaxis, igyaxis, logvars, bin, S50, A05, V30, bin_path):
     if map == 0:
         currentIG = [np.zeros((16, 16))]
     else:
-        with open(bin_path, 'rb') as bin_file:
-            if S50:
-                address = [0x27CF1A, 0x27D01A, 0x27D11A, 0x27D21A, 0x27D31A]
-            elif A05:
-                address = [0x2AFE7A, 0x2AFF9A, 0x2B00BA, 0x2B01DA, 0x2B02FA]
-            elif V30:
-                address = [0x13CF1A, 0x13D01A, 0x13D11A, 0x13D21A, 0x13D31A]
-
-            req = [address[map-1], 16, 16, 95, 2.666666666667, "uint8"]
-            currentIG = BinRead.bin_read(bin_file, req)  # Assuming BinRead function exists or is imported
+        currentIG = IGNmaps[map - 1]
 
     # Create Derived Values
     log['MAP'] = log['MAP'] * 10

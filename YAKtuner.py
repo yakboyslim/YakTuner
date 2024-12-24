@@ -42,10 +42,13 @@ cbx7.place(x=20, y=100)
 cbx7.select()
 
 cbx8 = ctk.CTkCheckBox(root, text="A05")
-cbx8.place(x=140, y=100)
+cbx8.place(x=100, y=100)
 
 cbx11 = ctk.CTkCheckBox(root, text="V30")
-cbx11.place(x=260, y=100)
+cbx11.place(x=180, y=100)
+
+cbx12 = ctk.CTkCheckBox(root, text="Custom FileStruct")
+cbx12.place(x=260, y=100)
 
 cbx5 = ctk.CTkCheckBox(root, text="Output results to CSV?")
 cbx5.place(x=20, y=130)
@@ -74,6 +77,7 @@ WGlogic = cbx6.get()
 S50 = cbx7.get()
 A05 = cbx8.get()
 V30 = cbx11.get()
+custom = cbx12.get()
 var_reset = cbx10.get()
 
 root.destroy()
@@ -102,6 +106,8 @@ bin_path = filedialog.askopenfilename(
     filetypes=[("Binary files", "*.bin")]
 )
 
+cust_struct = pd.read_csv(os.path.join(current_dir, "structure.csv"), header=None, dtype=str)
+
 with open(bin_path, 'rb') as bin_file:
     # Parse bin
     if S50:
@@ -110,8 +116,10 @@ with open(bin_path, 'rb') as bin_file:
         address = [0x277EB8, 0x277EA0, 0x27837C, 0x23D0E0, 0x23D092, 0x23D368, 0x23D4A8, 0x267A3E, 0x267ADE]
     elif V30:
         address = [0x22D926, 0x22D90E, 0x22DE5C, 0x212E76, 0x212E28, 0x213134, 0x213274, 0x230634, 0x2306D2]
+    elif custom:
+        address = [int(hex_str, 16) for hex_str in cust_struct[1][:9].tolist()]
     else:
-        messagebox.showerror("Error", "Must select S50 or A05")
+        messagebox.showerror("Error", "Must select File Structure")
         exit()
 
     rows = [1, 1, 1, 1, 1, 10, 10, 1, 1]
@@ -124,7 +132,6 @@ with open(bin_path, 'rb') as bin_file:
         res[4] = 1
 
     prec = ["uint8", "uint16", "uint16", "uint16", "uint16", "uint16", "uint16", "uint16", "uint16"]
-    # req = {"address": address, "rows": rows, "cols": cols, "offset": offset, "res": res, "prec": prec}
     req = [address, rows, cols, offset, res, prec]
     output = BinRead.bin_read(bin_file, req)
 
@@ -138,24 +145,44 @@ with open(bin_path, 'rb') as bin_file:
     igyaxis = np.ravel(output[7])
     igxaxis = np.ravel(output[8])
 
-    # Continue with MAF addresses
-    if S50:
-        address = [0x24B669, 0x24B6C9, 0x24B729, 0x24B789]
-    elif A05:
-        address = [0x277EDF, 0x277F3F, 0x277F9F, 0x277FFF]
-    elif V30:
-        address = [0x22D94D, 0x22D9AD, 0x22DA0D, 0x22DA6D]
-    else:
-        messagebox.showerror("Error", "Must select S50, A05, or V30")
-        exit()
 
-    rows = [12, 12, 12, 12]
-    cols = [8, 8, 8, 8]
-    offset = [128, 128, 128, 128]
-    res = [5.12, 5.12, 5.12, 5.12]
-    prec = ["uint8", "uint8", "uint8", "uint8"]
-    mafreq = [address, rows, cols, offset, res, prec]
-    maftables = BinRead.bin_read(bin_file, mafreq)
+
+    # Continue with MAF addresses
+    if MAF:
+        if S50:
+            address = [0x24B669, 0x24B6C9, 0x24B729, 0x24B789]
+        elif A05:
+            address = [0x277EDF, 0x277F3F, 0x277F9F, 0x277FFF]
+        elif V30:
+            address = [0x22D94D, 0x22D9AD, 0x22DA0D, 0x22DA6D]
+        elif custom:
+            address = [int(hex_str, 16) for hex_str in cust_struct[1][9:13].tolist()]
+
+        rows = [12, 12, 12, 12]
+        cols = [8, 8, 8, 8]
+        offset = [128, 128, 128, 128]
+        res = [5.12, 5.12, 5.12, 5.12]
+        prec = ["uint8", "uint8", "uint8", "uint8"]
+        mafreq = [address, rows, cols, offset, res, prec]
+        maftables = BinRead.bin_read(bin_file, mafreq)
+
+   # Continue with SP IGN Maps
+    if KNK:
+        if S50:
+            address = [0x27CF1A, 0x27D01A, 0x27D11A, 0x27D21A, 0x27D31A]
+        elif A05:
+            address = [0x2AFE7A, 0x2AFF9A, 0x2B00BA, 0x2B01DA, 0x2B02FA]
+        elif V30:
+            address = [0x13CF1A, 0x13D01A, 0x13D11A, 0x13D21A, 0x13D31A]
+        elif custom:
+            address = [int(hex_str, 16) for hex_str in cust_struct[1][13:17].tolist()]
+        rows = [16, 16, 16, 16, 16]
+        cols = [16, 16, 16, 16, 16]
+        offset = [95, 95, 95, 95, 95]
+        res = [2.666666666667, 2.666666666667, 2.666666666667, 2.666666666667, 2.666666666667]
+        prec = ["uint8", "uint8", "uint8", "uint8", "uint8"]
+        IGNreq = [address, rows, cols, offset, res, prec]
+        IGNmaps = BinRead.bin_read(bin_file, IGNreq)  # Assuming BinRead function exists or is imported
 
 # Convert Variables
 logvars = log.columns.tolist()
@@ -216,6 +243,6 @@ if MAFtune:
             )
 
 if IGtune:
-    Res_KNK = KNK.KNK(log, igxaxis, igyaxis, logvars, bin_file, S50, A05, V30, bin_path)
+    Res_KNK = KNK.KNK(log, igxaxis, igyaxis, logvars, bin_file, IGNmaps, bin_path)
     if save:
         Res_KNK.to_csv(os.path.join(os.path.dirname(file_paths[0]), "KNK Results.csv"))
