@@ -207,15 +207,17 @@ if missing_vars:
         listbox = tk.Listbox(var_window, selectmode='single')
         listbox.pack()
 
-        options = [varconv[0, i]] + logvars
+
+        options = [varconv[0, i]] + ['Not Logged'] + logvars
         for opt in options:
             listbox.insert(tk.END, opt)
 
 
         def on_select():
             selection = listbox.curselection()
-            if selection and selection[0] > 0:
-                varconv[0, i] = logvars[selection[0] - 1]
+            global log
+            if selection and selection[0] > 1:
+                varconv[0, i] = logvars[selection[0]-2]
                 log = log.rename(columns={varconv[0, i]: varconv[1, i]})
             var_window.destroy()
 
