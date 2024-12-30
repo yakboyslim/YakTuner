@@ -4,6 +4,7 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
     from scipy import stats
     import tkinter as tk
     from tkinter import simpledialog
+    from tkinter import messagebox
     from pandastable import Table
     import pwlf
 
@@ -22,7 +23,6 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
     root.withdraw()
 
     fudge = float(simpledialog.askstring("WG Inputs", "PUT fudge factor:", initialvalue="0.71"))
-    minpedal = float(simpledialog.askstring("WG Inputs", "Minimum pedal (if no PUT_I_INHIBIT):", initialvalue="50"))
     maxdelta = float(simpledialog.askstring("WG Inputs", "Maximum PUT delta:", initialvalue="10"))
     minboost = float(simpledialog.askstring("WG Inputs", "Minimum Boost:", initialvalue="0"))
 
@@ -35,13 +35,19 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
     if 'I_INH' in logvars:
         log = log[log['I_INH'] <= 0]
     else:
+        # messagebox.showerror('Recommendation', 'Recommend logging PUT I Inhibit. Using pedal value instead')
+        minpedal = float(simpledialog.askstring("WG Inputs", "Recommend logging PUT I Inhibit. Choose minimum pedal to use this time:", initialvalue="50"))
         log = log[log['Pedal'] >= minpedal]
 
     if 'DV' in logvars:
         log = log[log['DV'] <= 50]
+    else:
+        messagebox.showerror('Recommendation', 'Recommend logging DV position. Otherwise DV may impact accuracy of recommendations')
 
     if 'BOOST' in logvars:
         log = log[log['BOOST'] >= minboost]
+    else:
+        messagebox.showerror('Recommendation', 'Recommend logging boost. Otherwise logs are not trimmed for min boost')
 
     log = log[abs(log['deltaPUT']) <= maxdelta]
     log = log[log['WG_Final'] <= 98]

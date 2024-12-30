@@ -3,6 +3,7 @@ def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes, logvars):
     import pandas as pd
     from scipy import stats
     from tkinter import simpledialog
+    from tkinter import messagebox
     import tkinter as tk
     from pandastable import Table
     import pwlf
@@ -20,17 +21,25 @@ def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes, logvars):
 
     if 'LAM_DIF' not in logvars:
         log['LAM_DIF'] = 1/log['LAMBDA_SP'] - 1/log['LAMBDA']
+        messagebox.showerror('Recommendation','Recommend logging LAM DIF. Using calculated value instead, but may introduce some inaccuracy')
 
-    if "FAC_MFF_ADD_FAC_LAM_AD (%)" in logvars:
-        log['LTFT'] = log["FAC_MFF_ADD_FAC_LAM_AD (%)"]
+    if "FAC_MFF_ADD" in logvars:
+        log['LTFT'] = log["FAC_MFF_ADD"]
+    else:
+        messagebox.showerror('Recommendation','Recommend logging FAC_MFF_ADD_FAC_LAM_AD. This is a less filtered STFT, using STFT instead')
 
     if 'FAC_LAM_OUT' in logvars:
         log['STFT'] = log['FAC_LAM_OUT']
+    else:
+        messagebox.showerror('Recommendation','Recommend logging FAC_LAM_OUT. This is a less filtered LTFT, using LTFT instead')
 
     log['ADD_MAF'] = log['STFT'] + log['LTFT'] - log['LAM_DIF']
 
     if 'MAF_COR' in logvars:
         log['ADD_MAF'] = log['ADD_MAF'] + log['MAF_COR']
+    else:
+        messagebox.showerror('Recommendation',
+                             'Recommend logging MAF_COR. This allows the current MAF correction table impact to be correctly accounted for, increasing accuracy')
 
     log = log[log['state_lam'] == 1]
 
@@ -78,6 +87,7 @@ def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes, logvars):
         temp1 = log.copy()
         diffcmb = list(set(log['CMB']) - set(IDXmodes))
         temp1 = temp1[~temp1['CMB'].isin(diffcmb)]
+        temp1 = temp1[~temp1.isin([np.inf, -np.inf]).any(axis=1)]
 
         for i in range(len(mafxaxis)):
             temp = temp1[temp1['X'] == i]
