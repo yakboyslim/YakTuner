@@ -162,6 +162,24 @@ def KNK(log, igxaxis, igyaxis, logvars, bin, IGNmaps, bin_path):
 
             self.redraw()
 
+
+
+    # Plotting
+
+    plt.figure()
+    plottemp = log[log['knkoccurred'] == 1]
+    plt.scatter(plottemp['RPM'], plottemp['MAF'], s=abs(plottemp['KNKAVG']) * 100, c=plottemp['singlecyl'], cmap='Set1')
+    plt.colorbar(label='Cylinder', ticks=[1, 2, 3, 4])
+    plt.gca().invert_yaxis()
+    plt.xlabel('RPM')
+    plt.ylabel('MAF')
+    plt.grid(True)
+    plt.xticks(igxaxis)
+    plt.yticks(igyaxis)
+    plt.gca().xaxis.set_label_position('top')
+    plt.gca().xaxis.set_ticks_position('top')
+    plt.show(block=True)
+
     # Create the main window
     W1 = tk.Toplevel()
     W1.title("SP IGN Table")
@@ -189,23 +207,5 @@ def KNK(log, igxaxis, igyaxis, logvars, bin, IGNmaps, bin_path):
 
     # Start the main loop
     W1.mainloop()
-
-
-    # Plotting
-    # fig, ax = plt.subplots()
-    # plottemp = log[log['knkoccurred'] == 1]
-    # ax.scatter(plottemp['RPM'], plottemp['MAF'], s=abs(plottemp['KNKAVG']) * 100, c=plottemp['singlecyl'], cmap='Set1')
-
-    plt.figure()
-    plottemp = log[log['knkoccurred'] == 1]
-    plt.scatter(plottemp['RPM'], plottemp['MAF'], s=abs(plottemp['KNKAVG']) * 100, c=plottemp['singlecyl'], cmap='Set1')
-    # plt.colorbar(scatter, label='Cylinder', ticks=[1, 2, 3, 4])
-    # plt.gca().invert_yaxis()
-    # plt.xlabel('RPM')
-    # plt.ylabel('MAF')
-    # plt.grid(True)
-    # plt.gca().xaxis.set_label_position('top')
-    # plt.gca().xaxis.set_ticks_position('top')
-    # plt.show()
 
     return Res_KNK

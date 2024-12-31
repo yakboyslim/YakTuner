@@ -7,6 +7,8 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
     from tkinter import messagebox
     from pandastable import Table
     import pwlf
+    import matplotlib
+    import matplotlib.pyplot as plt
 
     # Determine SWG/FF
     if WGlogic == 1:
@@ -53,12 +55,8 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
     log = log[log['WG_Final'] <= 98]
     log_WGopen = log.copy()
 
-    if plot:
-        # Plotting code would go here
-        # Note: The original MATLAB plotting code uses UI components that would need
-        # significant adaptation for Python. Consider using matplotlib or other Python
-        # plotting libraries based on specific needs.
-        pass
+
+
 
     # Create Bins
     wgxedges = np.zeros(len(wgxaxis) + 1)
@@ -81,6 +79,22 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
 
     log_VVL1 = log_WGopen[log_WGopen['VVL'] == 1]
     log_VVL0 = log_WGopen[log_WGopen['VVL'] == 0]
+
+    # Plotting
+    syms = ['X' if vvl == 1 else 'O' for vvl in log['VVL']]
+    plt.figure()
+    plt.scatter(log_VVL1['EFF'], log_VVL1['IFF'], s=abs(log_VVL1['WGNEED']), c=log_VVL1['deltaPUT'], marker='x', cmap='RdBu')
+    plt.scatter(log_VVL0['EFF'], log_VVL0['IFF'], s=abs(log_VVL0['WGNEED']), c=log_VVL0['deltaPUT'], marker='o', cmap='RdBu')
+    plt.colorbar(label='PUT - PUT SP')
+    plt.gca().invert_yaxis()
+    plt.xlabel('EFF')
+    plt.ylabel('IFF')
+    plt.grid(True)
+    plt.xticks(wgxaxis)
+    plt.yticks(wgyaxis)
+    plt.gca().xaxis.set_label_position('top')
+    plt.gca().xaxis.set_ticks_position('top')
+    plt.show(block=True)
 
     # Initialize matrices
     SUM1 = np.zeros((len(wgyaxis), len(wgxaxis)))
