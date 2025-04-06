@@ -112,8 +112,8 @@ def KNK(log, igxaxis, igyaxis, logvars, bin, IGNmaps, bin_path):
 
                 if high[j, i] < 0:
                     AVG[j, i] = (high[j, i] + KR[j, i]) / 2
-                elif high[j, i] == 0 and igxaxis[i] > 2500 and igyaxis[j] > 700:
-                    AVG[j, i] = min(maxadv * COUNT[j, i] / 100, maxadv)
+                elif high[j, i] > 0 and igxaxis[i] > 2500 and igyaxis[j] > 700:
+                    AVG[j, i] = maxadv * (1 - norm.cdf(maxadv-KR[j, i]/sigma[j, i]))
                 else:
                     AVG[j, i] = 0
 
@@ -122,7 +122,7 @@ def KNK(log, igxaxis, igyaxis, logvars, bin, IGNmaps, bin_path):
     inter = np.ceil(AVG * 5.33333333) / 5.33333333
     NEW = np.round(inter * 2.666666666666667) / 2.666666666666667
 
-    resarray = NEW + currentIG[0]
+    resarray = NEW + currentIG
     Res_KNK = pd.DataFrame(resarray, columns=xlabels, index=ylabels)
 
 
