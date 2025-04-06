@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['YAKtuner.py'],
+    ['Yaktuner.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='YAKtuner',
+    name='Yaktuner',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

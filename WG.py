@@ -139,8 +139,8 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
 
     for i in range(len(wgxaxis)):
         for j in range(len(wgyaxis)):
-            temp = log_VVL1[log_VVL1['X'] == i + 1]  # +1 to match MATLAB 1-based indexing
-            temp = temp[temp['Y'] == j + 1]
+            temp = log_VVL1[log_VVL1['X'] == i]
+            temp = temp[temp['Y'] == j]
             AVGtemp[j,i] = temp['WGNEED'].mean()
             COUNT1[j, i] = len(temp)
             # current[j, i] = interp2d(oldwgxaxis, oldwgyaxis, oldWG1)(wgxaxis[i], wgyaxis[j])[0]
@@ -194,8 +194,8 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
 
     for i in range(len(wgxaxis)):
         for j in range(len(wgyaxis)):
-            temp = log_VVL0[log_VVL0['X'] == i + 1]  # +1 to match MATLAB 1-based indexing
-            temp = temp[temp['Y'] == j + 1]
+            temp = log_VVL0[log_VVL0['X'] == i]
+            temp = temp[temp['Y'] == j]
             AVGtemp[j,i] = temp['WGNEED'].mean()
             COUNT0[j, i] = len(temp)
             # current[j, i] = interp2d(oldwgxaxis, oldwgyaxis, oldWG1)(wgxaxis[i], wgyaxis[j])[0]
@@ -291,5 +291,16 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
 
     # Start the main loop
     W1.mainloop()
+
+
+    #Future work for temp compensation
+    #
+    # import scipy.interpolate
+    #
+    # interp = scipy.interpolate.RegularGridInterpolator((wgyaxis, wgxaxis), AVG0)
+    # log_VVL0['WGNEW'] = 100 * interp((log_VVL0['IFF'], log_VVL0['EFF'])) #Need to correct out of bounds condition
+    # log_VVL0['WGRES'] = log_VVL0['WGNEED'] - log_VVL0['WGNEW']
+    # coef = np.polyfit(log_VVL0['Ambient Temp (\u00b0F)'], log_VVL0['WGRES'] / 100, 1)
+    # poly1d_fn = np.poly1d(coef)
 
     return Res_1, Res_0
