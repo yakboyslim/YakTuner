@@ -1,4 +1,4 @@
-def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
+def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic, tempcomp, tempcompaxis):
     import numpy as np
     import pandas as pd
     from scipy import stats
@@ -9,11 +9,16 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
     import pwlf
     import matplotlib
     import matplotlib.pyplot as plt
+    from scipy import interpolate
 
     # Determine SWG/FF
     if WGlogic == 1:
         log['EFF'] = log['RPM']
         log['IFF'] = log['PUTSP'] * 10
+        interp_func = interpolate.interp1d(tempcompaxis, tempcomp, kind='linear')
+        tempcorr = interp_func(log['AMBTEMP'])
+    else:
+        tempcorr = 0
 
     oldwgyaxis = wgyaxis.copy()
     oldwgxaxis = wgxaxis.copy()
@@ -29,9 +34,11 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
     minboost = float(simpledialog.askstring("WG Inputs", "Minimum Boost:", initialvalue="0"))
 
     # Create Derived Values
+
     log['deltaPUT'] = log['PUT'] - log['PUTSP']
-    log['WGNEED'] = log['WG_Final'] - log['deltaPUT'] * fudge
+    log['WGNEED_uncorrected'] = log['WG_Final'] - log['deltaPUT'] * fudge
     log['WGCL'] = log['WG_Final'] - log['WG_Base']
+    log['WGNEED'] = log['WGNEED_uncorrected'] - tempcorr
 
     # Create Trimmed datasets
     if 'I_INH' in logvars:
@@ -191,6 +198,8 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
         rows0[j, :] = my_pwlf.predict(wgxaxis)
 
     blend0 = (rows0+columns0)/200
+    totalcoef = 0
+    countcoef = 0
 
     for i in range(len(wgxaxis)):
         for j in range(len(wgyaxis)):
@@ -199,6 +208,11 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
             AVGtemp[j,i] = temp['WGNEED'].mean()
             COUNT0[j, i] = len(temp)
             # current[j, i] = interp2d(oldwgxaxis, oldwgyaxis, oldWG1)(wgxaxis[i], wgyaxis[j])[0]
+            if len(temp) > 2:
+                tempcoef = np.polyfit(temp['AMBTEMP'], temp['WGNEED_uncorrected'] / 100, 1)
+                totalcoef = totalcoef+tempcoef[0]
+                countcoef = countcoef + 1
+
 
             if COUNT0[j, i] > 3:
                 # Fit normal distribution and get confidence intervals
@@ -215,6 +229,7 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
             else:
                 AVG0[j, i] = current[j, i]
     AVG0 = np.round(AVG0 * 16384) / 16384
+    AVGcoef = totalcoef / countcoef
 
     # Return results as pandas DataFrames
     Res_1 = pd.DataFrame(AVG1, columns=exhlabels, index=intlabels)
@@ -288,19 +303,9 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic):
 
     W1.protocol("WM_DELETE_WINDOW", on_closing)
 
+    messagebox.showinfo("Recommended Temp compensation slope", f"Should be roughly 0.0015-0.0020, if you get strange values you need more data in varying environmental conditions. Calculated: {AVGcoef}")
 
     # Start the main loop
     W1.mainloop()
-
-
-    #Future work for temp compensation
-    #
-    # import scipy.interpolate
-    #
-    # interp = scipy.interpolate.RegularGridInterpolator((wgyaxis, wgxaxis), AVG0)
-    # log_VVL0['WGNEW'] = 100 * interp((log_VVL0['IFF'], log_VVL0['EFF'])) #Need to correct out of bounds condition
-    # log_VVL0['WGRES'] = log_VVL0['WGNEED'] - log_VVL0['WGNEW']
-    # coef = np.polyfit(log_VVL0['Ambient Temp (\u00b0F)'], log_VVL0['WGRES'] / 100, 1)
-    # poly1d_fn = np.poly1d(coef)
 
     return Res_1, Res_0
