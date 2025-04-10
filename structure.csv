@@ -7,6 +7,8 @@ WG VVl0,0x135A8
 WG VVL1,0x136E8
 IGN y axis,0x30B88
 IGN x axis,0x30C26
+WG table ambient temperature compensation,0x0
+WG temperature axis,0x0
 MAF IDX0,0x2DE7D
 MAF IDX1,0x2DEDD
 MAF IDX2,0x2DF3D

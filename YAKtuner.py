@@ -111,27 +111,27 @@ cust_struct = pd.read_csv(os.path.join(current_dir, "structure.csv"), header=Non
 with open(bin_path, 'rb') as bin_file:
     # Parse bin
     if S50:
-        address = [0x24B642, 0x24B62A, 0x24BB66, 0x21974A, 0x2196FC, 0x2199F6, 0x219B36, 0x23CDBC, 0x23CE5A]
+        address = [0x24B642, 0x24B62A, 0x24BB66, 0x21974A, 0x2196FC, 0x2199F6, 0x219B36, 0x23CDBC, 0x23CE5A, 0x27D866, 0x27D860]
     elif A05:
-        address = [0x277EB8, 0x277EA0, 0x27837C, 0x23D0E0, 0x23D092, 0x23D368, 0x23D4A8, 0x267A3E, 0x267ADE]
+        address = [0x277EB8, 0x277EA0, 0x27837C, 0x23D0E0, 0x23D092, 0x23D368, 0x23D4A8, 0x267A3E, 0x267ADE, 0x2B0866, 0x2B0860]
     elif V30:
-        address = [0x22D926, 0x22D90E, 0x22DE5C, 0x212E76, 0x212E28, 0x213134, 0x213274, 0x230634, 0x2306D2]
+        address = [0x22D926, 0x22D90E, 0x22DE5C, 0x212E76, 0x212E28, 0x213134, 0x213274, 0x230634, 0x2306D2, 0x13D866, 0x13D860]
     elif custom:
-        address = [int(hex_str, 16) for hex_str in cust_struct[1][:9].tolist()]
+        address = [int(hex_str, 16) for hex_str in cust_struct[1][:11].tolist()]
     else:
         messagebox.showerror("Error", "Must select File Structure")
         exit()
 
-    rows = [1, 1, 1, 1, 1, 10, 10, 1, 1]
-    cols = [39, 12, 8, 10, 16, 16, 16, 16, 16]
-    offset = [0, 0, 0, 0, 0, 32768, 32768, 0, 0]
-    res = [1, 12.06, 1, 16384, 16384, 16384, 16384, 23.59071274298056, 1]
+    rows = [1, 1, 1, 1, 1, 10, 10, 1, 1, 1, 1]
+    cols = [39, 12, 8, 10, 16, 16, 16, 16, 16, 6, 6]
+    offset = [0, 0, 0, 0, 0, 32768, 32768, 0, 0, 32768, 64]
+    res = [1, 12.06, 1, 16384, 16384, 16384, 16384, 23.59071274298056, 1, 16384, 1.33]
 
     if WGlogic:
         res[3] = 1 / 0.082917524986648
         res[4] = 1
 
-    prec = ["uint8", "uint16", "uint16", "uint16", "uint16", "uint16", "uint16", "uint16", "uint16"]
+    prec = ["uint8", "uint16", "uint16", "uint16", "uint16", "uint16", "uint16", "uint16", "uint16", "uint16", "uint8"]
     req = [address, rows, cols, offset, res, prec]
     output = BinRead.bin_read(bin_file, req)
 
@@ -144,6 +144,8 @@ with open(bin_path, 'rb') as bin_file:
     currentWG1 = output[6]
     igyaxis = np.ravel(output[7])
     igxaxis = np.ravel(output[8])
+    tempcomp = np.ravel(output[9])
+    tempcompaxis = np.ravel(output[10])
 
 
 
@@ -156,7 +158,7 @@ with open(bin_path, 'rb') as bin_file:
         elif V30:
             address = [0x22D94D, 0x22D9AD, 0x22DA0D, 0x22DA6D]
         elif custom:
-            address = [int(hex_str, 16) for hex_str in cust_struct[1][9:13].tolist()]
+            address = [int(hex_str, 16) for hex_str in cust_struct[1][11:15].tolist()]
 
         rows = [12, 12, 12, 12]
         cols = [8, 8, 8, 8]
@@ -175,7 +177,7 @@ with open(bin_path, 'rb') as bin_file:
         elif V30:
             address = [0x13CF1A, 0x13D01A, 0x13D11A, 0x13D21A, 0x13D31A]
         elif custom:
-            address = [int(hex_str, 16) for hex_str in cust_struct[1][13:17].tolist()]
+            address = [int(hex_str, 16) for hex_str in cust_struct[1][15:19].tolist()]
         rows = [16, 16, 16, 16, 16]
         cols = [16, 16, 16, 16, 16]
         offset = [95, 95, 95, 95, 95]
@@ -231,7 +233,7 @@ logvars = log.columns.tolist()
 
  #Tunes
 if WGtune:
-    Res_1, Res_0 = WG.WG_tune(log, wgxaxis, wgyaxis, currentWG0, currentWG1, logvars, plot, WGlogic)
+    Res_1, Res_0 = WG.WG_tune(log, wgxaxis, wgyaxis, currentWG0, currentWG1, logvars, plot, WGlogic, tempcomp, tempcompaxis)
     if save:
         Res_1.to_csv(os.path.join(os.path.dirname(file_paths[0]), "VVL1 Results.csv"))
         Res_0.to_csv(os.path.join(os.path.dirname(file_paths[0]), "VVL0 Results.csv"))

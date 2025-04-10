@@ -19,6 +19,9 @@ def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes, logvars):
     # Create Derived Values
     log['MAP'] = log['MAP'] * 10
 
+    if "OILTEMP" in logvars:
+        log = log[log['OILTEMP'] > 180]
+
     if 'LAM_DIF' not in logvars:
         log['LAM_DIF'] = 1/log['LAMBDA_SP'] - 1/log['LAMBDA']
         messagebox.showerror('Recommendation','Recommend logging LAM DIF. Using calculated value instead, but may introduce some inaccuracy')
@@ -40,6 +43,7 @@ def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes, logvars):
     else:
         messagebox.showerror('Recommendation',
                              'Recommend logging MAF_COR. This allows the current MAF correction table impact to be correctly accounted for, increasing accuracy')
+
 
     log = log[log['state_lam'] == 1]
 
