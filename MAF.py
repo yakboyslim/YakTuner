@@ -1,22 +1,63 @@
-def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes, logvars):
-    import numpy as np
-    import pandas as pd
-    from scipy import stats
-    from tkinter import simpledialog
-    from tkinter import messagebox
-    import tkinter as tk
-    from pandastable import Table
-    import pwlf
+"""
+Mass Airflow (MAF) Correction Tuning Module
 
-    # Create input dialog for confidence
-    root = tk.Tk()
-    root.withdraw()
-    conf = float(simpledialog.askstring("MAF Correction Inputs",
-                                        "Confidence required to make change:",
-                                        initialvalue="0.75"))
-    maxcount = 100
+This module analyzes engine logs to calculate and recommend adjustments to the
+four primary MAF correction tables (IDX0-IDX3). It processes fuel trim data
+to determine the required additive MAF correction, fits a 3D surface to this
+data, and applies a confidence-based algorithm to generate new table values.
 
-    # Create Derived Values
+The results are presented in a 2x2 grid of tables and optional interactive
+3D plots for detailed visual analysis.
+"""
+
+import numpy as np
+import pandas as pd
+from scipy import stats, interpolate
+import tkinter as tk
+from tkinter import simpledialog, messagebox, Toplevel, Frame
+from pandastable import Table
+import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
+
+# --- Helper Classes ---
+
+class ColoredTable(Table):
+    """A pandastable Table subclass that colors cells based on correction value."""
+    def __init__(self, parent=None, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.rowselectedcolor = None  # Disable default row selection highlighting
+
+    def color_cells(self, change_array):
+        """Colors cells green for positive changes, red for negative."""
+        self.resetColors()
+        if change_array.shape != self.model.df.shape:
+            return
+
+        for r in range(change_array.shape[0]):
+            for c in range(change_array.shape[1]):
+                value = change_array[r, c]
+                if value > 0.001:  # Use a small threshold to avoid coloring negligible changes
+                    self.setRowColors(rows=[r], cols=[c], clr='#90EE90')  # Light Green
+                elif value < -0.001:
+                    self.setRowColors(rows=[r], cols=[c], clr='#FFB6C1')  # Light Red
+        self.redraw()
+
+# --- Helper Functions ---
+
+def _get_maf_parameters():
+    """Shows dialogs to get user inputs for MAF tuning."""
+    params = {
+        'confidence': 1 - float(simpledialog.askstring("MAF Inputs", "Confidence required to make change:", initialvalue="0.25")),
+        'show_3d_plot': messagebox.askyesno(
+            "3D Visualization",
+            "Would you like to visualize the results in a 3D plot?\n(This can help in understanding the changes)"
+        )
+    }
+    return params
+
+def _prepare_maf_data(log, logvars):
+    """Adds derived columns, filters log data, and warns about missing variables."""
     log['MAP'] = log['MAP'] * 10
 
     if "OILTEMP" in logvars:
@@ -24,227 +65,188 @@ def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes, logvars):
 
     if 'LAM_DIF' not in logvars:
         log['LAM_DIF'] = 1/log['LAMBDA_SP'] - 1/log['LAMBDA']
-        messagebox.showerror('Recommendation','Recommend logging LAM DIF. Using calculated value instead, but may introduce some inaccuracy')
+        messagebox.showwarning('Recommendation', 'Recommend logging LAM DIF. Using calculated value, but may introduce inaccuracy.')
 
-    if "FAC_MFF_ADD" in logvars:
-        log['LTFT'] = log["FAC_MFF_ADD"]
-    else:
-        messagebox.showerror('Recommendation','Recommend logging FAC_MFF_ADD_FAC_LAM_AD. This is a less filtered STFT, using STFT instead')
-
-    if 'FAC_LAM_OUT' in logvars:
-        log['STFT'] = log['FAC_LAM_OUT']
-    else:
-        messagebox.showerror('Recommendation','Recommend logging FAC_LAM_OUT. This is a less filtered LTFT, using LTFT instead')
+    log['LTFT'] = log["FAC_MFF_ADD"] if "FAC_MFF_ADD" in logvars else log['STFT']
+    log['STFT'] = log['FAC_LAM_OUT'] if 'FAC_LAM_OUT' in logvars else log['LTFT']
 
     log['ADD_MAF'] = log['STFT'] + log['LTFT'] - log['LAM_DIF']
 
     if 'MAF_COR' in logvars:
         log['ADD_MAF'] = log['ADD_MAF'] + log['MAF_COR']
     else:
-        messagebox.showerror('Recommendation',
-                             'Recommend logging MAF_COR. This allows the current MAF correction table impact to be correctly accounted for, increasing accuracy')
-
+        messagebox.showwarning('Recommendation', 'Recommend logging MAF_COR for increased accuracy.')
 
     log = log[log['state_lam'] == 1]
+    return log
 
-    # Create axis labels
-    xlabels = [str(x) for x in mafxaxis]
-    ylabels = [str(y) for y in mafyaxis]
+def _create_bins(log, mafxaxis, mafyaxis):
+    """Discretizes log data into bins based on MAF map axes."""
+    xedges = [0] + [(mafxaxis[i] + mafxaxis[i + 1]) / 2 for i in range(len(mafxaxis) - 1)] + [np.inf]
+    yedges = [0] + [(mafyaxis[i] + mafyaxis[i + 1]) / 2 for i in range(len(mafyaxis) - 1)] + [np.inf]
 
-    # Create Bins
-    xedges = np.zeros(len(mafxaxis) + 1)
-    xedges[0] = 0
-    xedges[-1] = np.inf
-    for i in range(len(mafxaxis)-1):
-        xedges[i+1] = (mafxaxis[i] + mafxaxis[i+1])/2
-
-    yedges = np.zeros(len(mafyaxis) + 1)
-    yedges[0] = 0
-    yedges[-1] = np.inf
-    for i in range(len(mafyaxis)-1):
-        yedges[i+1] = (mafyaxis[i] + mafyaxis[i+1])/2
-
-    # Discretize MAF
     log['X'] = pd.cut(log['RPM'], bins=xedges, labels=False)
     log['Y'] = pd.cut(log['MAP'], bins=yedges, labels=False)
+    return log
+
+def _fit_surface_maf(log_data, mafxaxis, mafyaxis):
+    """Fits a 3D surface to the MAF correction data using griddata."""
+    if log_data.empty or len(log_data) < 3:
+        return np.zeros((len(mafyaxis), len(mafxaxis)))
+
+    points = log_data[['RPM', 'MAP']].values
+    values = log_data['ADD_MAF'].values
+    grid_x, grid_y = np.meshgrid(mafxaxis, mafyaxis)
+
+    fitted_surface = interpolate.griddata(points, values, (grid_x, grid_y), method='linear')
+
+    nan_mask = np.isnan(fitted_surface)
+    if np.any(nan_mask):
+        nearest_fill = interpolate.griddata(points, values, (grid_x[nan_mask], grid_y[nan_mask]), method='nearest')
+        fitted_surface[nan_mask] = nearest_fill
+
+    return np.nan_to_num(fitted_surface)
+
+def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafyaxis, confidence):
+    """Applies confidence interval logic to determine the final correction table."""
+    new_table = old_table.copy()
+    changed_mask = np.zeros_like(old_table, dtype=bool)
+    max_count = 100.0
+    interp_factor = 0.25
+
+    for i in range(len(mafxaxis)):
+        for j in range(len(mafyaxis)):
+            cell_data = log_data[(log_data['X'] == i) & (log_data['Y'] == j)]
+            count = len(cell_data)
+
+            if count > 3:
+                mean, std_dev = stats.norm.fit(cell_data['ADD_MAF'])
+                low_ci, high_ci = stats.norm.interval(confidence, loc=mean, scale=std_dev if std_dev > 0 else 1e-9)
+
+                current_val = old_table[j, i]
+                change_made = False
+                new_val = current_val
+
+                if low_ci > current_val:
+                    new_val = (blend_surface[j, i] * interp_factor + low_ci * (1 - interp_factor))
+                    change_made = True
+                elif high_ci < current_val:
+                    new_val = (blend_surface[j, i] * interp_factor + high_ci * (1 - interp_factor))
+                    change_made = True
+
+                if change_made:
+                    # Weight the change by the number of data points, capped at max_count
+                    weight = min(count, max_count) / max_count
+                    change_amount = (new_val - current_val) * weight
+                    new_table[j, i] = current_val + change_amount
+                    changed_mask[j, i] = True
+
+    # Quantize the final table to the ECU's resolution (5.12 = 256 / 50)
+    recommended_table = np.round(new_table * 5.12) / 5.12
+    # Recalculate the final change amount after quantization
+    final_change = recommended_table - old_table
+    return recommended_table, final_change, changed_mask
+
+def _plot_3d_maf_surface(title, mafxaxis, mafyaxis, old_map, new_map, log_data, changed_mask):
+    """Creates an interactive 3D plot to visualize and compare MAF surfaces."""
+    if log_data.empty:
+        return
+
+    fig = plt.figure(figsize=(15, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    X, Y = np.meshgrid(mafxaxis, mafyaxis)
+
+    ax.scatter(log_data['RPM'], log_data['MAP'], log_data['ADD_MAF'], c='red', marker='o', label='Raw ADD_MAF Data', s=15)
+    ax.plot_wireframe(X, Y, old_map, color='gray', alpha=0.7, label='Original Map')
+    ax.plot_surface(X, Y, new_map, cmap='viridis', alpha=0.6, label='Recommended Map')
+
+    changed_y_indices, changed_x_indices = np.where(changed_mask)
+    if changed_y_indices.size > 0:
+        x_coords = mafxaxis[changed_x_indices]
+        y_coords = mafyaxis[changed_y_indices]
+        z_coords = new_map[changed_y_indices, changed_x_indices] + 0.01  # Z-offset
+        ax.scatter(x_coords, y_coords, z_coords, c='magenta', marker='X', s=60, label='Changed Cells', depthshade=False)
+
+    ax.set_title(title, fontsize=16)
+    ax.set_xlabel('Engine Speed (RPM)', fontsize=12)
+    ax.set_ylabel('Manifold Absolute Pressure (MAP)', fontsize=12)
+    ax.set_zlabel('Additive MAF Correction', fontsize=12)
+    ax.invert_yaxis()
+
+    legend_elements = [
+        Line2D([0], [0], color='gray', lw=2, label='Original Map'),
+        Patch(facecolor=plt.cm.viridis(0.5), edgecolor='k', label='Recommended Map'),
+        Line2D([0], [0], marker='o', color='w', label='Raw ADD_MAF Data', markerfacecolor='r', markersize=8),
+        Line2D([0], [0], marker='X', color='w', label='Changed Cells', markerfacecolor='magenta', markersize=10)
+    ]
+    ax.legend(handles=legend_elements, loc='upper left')
+    plt.show(block=True)
+
+def _display_maf_results(results, changes):
+    """Creates a Toplevel window with a 2x2 grid to display the MAF tables."""
+    window = Toplevel()
+    window.title("MAF Table Recommendations")
+
+    frames = [Frame(window) for _ in range(4)]
+    grid_positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
+
+    for i, frame in enumerate(frames):
+        row, col = grid_positions[i]
+        window.grid_rowconfigure(row, weight=1)
+        window.grid_columnconfigure(col, weight=1)
+        frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+
+        tk.Label(frame, text=f"IDX{i} Correction Table", font=("Arial", 10, "bold")).pack(pady=5)
+        table_frame = Frame(frame)
+        table_frame.pack(fill='both', expand=True)
+
+        pt = ColoredTable(table_frame, dataframe=results[f"IDX{i}"], showtoolbar=True, showstatusbar=True)
+        pt.editable = False
+        pt.show()
+        pt.color_cells(changes[f"IDX{i}"])
+
+# --- Main Function ---
+
+def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes, logvars):
+    """Main orchestrator for the MAF tuning process."""
+    params = _get_maf_parameters()
+    log = _prepare_maf_data(log, logvars)
+    log = _create_bins(log, mafxaxis, mafyaxis)
 
     results = {}
     changes = {}
 
-    for IDX in range(4):
-        SUM = np.zeros((len(mafyaxis), len(mafxaxis)))
-        COUNT = np.zeros_like(SUM)
-        AVG = np.zeros_like(SUM)
-        columns = np.zeros((12, 8))
-        rows = np.zeros_like(columns)
-        current = maftables[IDX]
-        sigma = np.zeros_like(AVG)
-        low = np.zeros_like(AVG)
-        high = np.zeros_like(AVG)
-        IDXmodes = np.where(combmodes == IDX)[0]
+    for idx in range(4):
+        current_table = maftables[idx]
+        idx_modes = np.where(combmodes == idx)[0]
+        log_filtered = log[log['CMB'].isin(idx_modes)].copy()
+        log_filtered.dropna(subset=['RPM', 'MAP', 'ADD_MAF'], inplace=True)
 
-        if 'MAF_COR' in logvars:
-            test = current.copy()
-        else:
-            test = np.zeros((len(mafyaxis), len(mafxaxis)))
+        # Fit a 3D surface to the filtered data
+        blend_surface = _fit_surface_maf(log_filtered, mafxaxis, mafyaxis)
 
-        temp1 = log.copy()
-        diffcmb = list(set(log['CMB']) - set(IDXmodes))
-        temp1 = temp1[~temp1['CMB'].isin(diffcmb)]
-        temp1 = temp1[~temp1.isin([np.inf, -np.inf]).any(axis=1)]
+        # Calculate the final recommended table based on confidence logic
+        recommended_table, final_change, changed_mask = _calculate_maf_correction(
+            log_filtered, blend_surface, current_table, mafxaxis, mafyaxis, params['confidence']
+        )
 
-        for i in range(len(mafxaxis)):
-            temp = temp1[temp1['X'] == i]
-            # if len(temp) > 1:
-            fill = pd.DataFrame({"MAP": mafyaxis, "ADD_MAF": current[:, i]})
-            temp = temp._append(fill, ignore_index=True)
-            my_pwlf = pwlf.PiecewiseLinFit(temp.MAP, temp.ADD_MAF)
-            my_pwlf.fit_with_breaks(mafyaxis)
-            columns[:, i] = my_pwlf.predict(mafyaxis)
+        # Store results
+        xlabels = [str(x) for x in mafxaxis]
+        ylabels = [str(y) for y in mafyaxis]
+        results[f'IDX{idx}'] = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
+        changes[f'IDX{idx}'] = final_change
 
-        for j in range(len(mafyaxis)):
-            temp = temp1[temp1['Y'] == j]
-            # if len(temp) > 1:
-            fill = pd.DataFrame({"RPM": mafxaxis, "ADD_MAF": current[j, :]})
-            temp = temp._append(fill, ignore_index=True)
-            my_pwlf = pwlf.PiecewiseLinFit(temp.RPM, temp.ADD_MAF)
-            my_pwlf.fit_with_breaks(mafxaxis)
-            rows[j, :] = my_pwlf.predict(mafxaxis)
+        # Optionally visualize the results in 3D
+        if params['show_3d_plot']:
+            _plot_3d_maf_surface(
+                title=f"IDX{idx} MAF Correction (Changes Marked)",
+                mafxaxis=mafxaxis,
+                mafyaxis=mafyaxis,
+                old_map=current_table,
+                new_map=recommended_table,
+                log_data=log_filtered,
+                changed_mask=changed_mask
+            )
 
-
-        blend = (columns + rows)/2
-        interpfac = 0.25
-
-        for i in range(len(mafxaxis)):
-            for j in range(len(mafyaxis)):
-                temp = temp1[(temp1['X'] == i) & (temp1['Y'] == j)]
-                COUNT[j, i] = len(temp)
-                if COUNT[j, i] > 3:
-                    # Fit normal distribution and get confidence intervals
-                    dist = stats.norm.fit(temp['ADD_MAF'])
-                    ci = stats.norm.interval(0.5, loc=dist[0], scale=dist[1])
-                    sigma[j, i] = dist[1]  # standard deviation
-                    low[j, i] = ci[0]
-                    high[j, i] = ci[1]
-
-                    if low[j, i] > test[j, i]:
-                        AVG[j, i] = (blend[j, i] * interpfac + low[j, i] * (1-interpfac))
-                    elif high[j, i] < test[j, i]:
-                        AVG[j, i] = (blend[j, i] * interpfac + high[j, i] * (1-interpfac))
-                    else:
-                        AVG[j, i] = test[j, i]
-                else:
-                    AVG[j, i] = test[j, i]
-
-        COUNT = np.minimum(COUNT, maxcount)
-        COUNT = COUNT/maxcount
-
-        COUNT[np.isnan(COUNT)] = 0
-        AVG[np.isnan(AVG)] = 0
-        CHANGE = (AVG - test) * COUNT
-        NEW = np.round((current + CHANGE) * 5.12) / 5.12
-
-        field_name = f'IDX{IDX}'
-        results[field_name] = pd.DataFrame(NEW, columns=xlabels, index=ylabels)
-        changes[field_name] = CHANGE
-
-    class ColoredTable(Table):
-        def __init__(self, parent=None, **kwargs):
-            Table.__init__(self, parent, **kwargs)
-
-        def color_cells(self, array1):
-            """Color cells based on comparison of two arrays"""
-
-            # Reset all colors first
-            self.resetColors()
-
-            # Get the current DataFrame
-            df = self.model.df
-
-            # Ensure arrays are the same shape as the DataFrame
-            if array1.shape != df.shape:
-                raise ValueError("Arrays must have the same shape as the DataFrame")
-
-            # Create color mapping
-            colors = {
-                'higher': '#90EE90',  # light green
-                'lower': '#FFB6C1',  # light red
-                'equal': '#FFFFFF'  # white
-            }
-
-            # Compare arrays and set colors
-            for i in range(array1.shape[0]):
-                for j in range(array1.shape[1]):
-                    if array1[i, j] > 0:
-                        self.setRowColors(rows=[i], cols=[j], clr=colors['higher'])
-                    elif array1[i, j] < 0:
-                        self.setRowColors(rows=[i], cols=[j], clr=colors['lower'])
-                    else:
-                        self.setRowColors(rows=[i], cols=[j], clr=colors['equal'])
-
-            self.redraw()
-
-    # Create the main window
-    W1 = tk.Toplevel()
-    W1.title("MAF Tables")
-
-    # Create a frame to hold the table
-    frame0 = tk.Frame(W1, width=450, height=200)
-    frame1 = tk.Frame(W1, width=450, height=200)
-    frame2 = tk.Frame(W1, width=450, height=200)
-    frame3 = tk.Frame(W1, width=450, height=200)
-
-    # Configure grid weights to make frames expand equally
-    W1.grid_rowconfigure(0, weight=1)
-    W1.grid_rowconfigure(1, weight=1)
-    W1.grid_columnconfigure(0, weight=1)
-    W1.grid_columnconfigure(1, weight=1)
-
-    # Place frames in a 2x2 grid
-    frame0.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
-    frame1.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
-    frame2.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
-    frame3.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
-
-    tk.Label(frame0, text="IDX0")
-    tk.Label(frame1, text="IDX1")
-    tk.Label(frame2, text="IDX2")
-    tk.Label(frame3, text="IDX3")
-
-
-    # Create the table and add it to the frame
-    pt0 = ColoredTable(frame0, dataframe=results[f"IDX{0}"], showtoolbar=True, showstatusbar=True)
-    pt0.editable = False
-    pt0.show()
-    pt0.color_cells(changes[f"IDX{0}"])
-    pt0.rowselectedcolor = None
-
-    pt1 = ColoredTable(frame1, dataframe=results[f"IDX{1}"], showtoolbar=True, showstatusbar=True)
-    pt1.editable = False
-    pt1.show()
-    pt1.color_cells(changes[f"IDX{1}"])
-    pt1.rowselectedcolor = None
-
-    pt2 = ColoredTable(frame2, dataframe=results[f"IDX{2}"], showtoolbar=True, showstatusbar=True)
-    pt2.editable = False
-    pt2.show()
-    pt2.color_cells(changes[f"IDX{2}"])
-    pt2.rowselectedcolor = None
-
-    pt3 = ColoredTable(frame3, dataframe=results[f"IDX{3}"], showtoolbar=True, showstatusbar=True)
-    pt3.editable = False
-    pt3.show()
-    pt3.color_cells(changes[f"IDX{3}"])
-    pt3.rowselectedcolor = None
-
-    def on_closing():
-        W1.quit()
-        W1.destroy()
-
-    W1.protocol("WM_DELETE_WINDOW", on_closing)
-
-
-    # Start the main loop
-    W1.mainloop()
-
+    _display_maf_results(results, changes)
     return results

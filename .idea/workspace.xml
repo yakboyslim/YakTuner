@@ -7,7 +7,12 @@
     <list default="true" id="2a81625d-3a2f-4b79-8cf5-9164183627ab" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/YAKtunerCONVERTED.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/YAKtunerCONVERTED.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/BinRead.py" beforeDir="false" afterPath="$PROJECT_DIR$/BinRead.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/KNK.py" beforeDir="false" afterPath="$PROJECT_DIR$/KNK.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/MAF.py" beforeDir="false" afterPath="$PROJECT_DIR$/MAF.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/WG.py" beforeDir="false" afterPath="$PROJECT_DIR$/WG.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/YAKtuner.py" beforeDir="false" afterPath="$PROJECT_DIR$/YAKtuner.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/variables.csv" beforeDir="false" afterPath="$PROJECT_DIR$/variables.csv" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -53,17 +58,17 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python.KNK.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.YAKtuner.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.KNK.executor": "Debug",
+    "Python.YAKtuner.executor": "Run",
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "Gemini-recode",
+    "settings.editor.selected.configurable": "preferences.pluginManager"
   }
-}</component>
+}]]></component>
   <component name="RunManager" selected="Python.YAKtuner">
     <configuration name="KNK" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="YAKtunerCONVERTED" />
@@ -92,9 +97,6 @@
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
       <option name="SDK_HOME" value="" />
       <option name="SDK_NAME" value="Python 3.13 (YAKtunerCONVERTED)" />
       <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
@@ -111,8 +113,8 @@
       <method v="2" />
     </configuration>
     <list>
-      <item itemvalue="Python.KNK" />
       <item itemvalue="Python.YAKtuner" />
+      <item itemvalue="Python.KNK" />
     </list>
     <recent_temporary>
       <list>
@@ -185,29 +187,14 @@
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/KNK.py</url>
-          <line>124</line>
-          <option name="timeStamp" value="35" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/WG.py</url>
-          <line>253</line>
+          <line>258</line>
           <option name="timeStamp" value="40" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/WG.py</url>
-          <line>189</line>
-          <option name="timeStamp" value="41" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/WG.py</url>
-          <line>18</line>
-          <option name="timeStamp" value="42" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/WG.py</url>
-          <line>17</line>
-          <option name="timeStamp" value="44" />
+          <line>77</line>
+          <option name="timeStamp" value="48" />
         </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
