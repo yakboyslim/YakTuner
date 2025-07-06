@@ -15,7 +15,7 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic, tempc
     if WGlogic == 1:
         log['EFF'] = log['RPM']
         log['IFF'] = log['PUTSP'] * 10
-        interp_func = interpolate.interp1d(tempcompaxis, tempcomp, kind='linear')
+        interp_func = interpolate.interp1d(tempcompaxis, tempcomp, kind='linear', fill_value='extrapolate')
         tempcorr = interp_func(log['AMBTEMP'])
     else:
         tempcorr = 0
@@ -38,7 +38,8 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic, tempc
     log['deltaPUT'] = log['PUT'] - log['PUTSP']
     log['WGNEED_uncorrected'] = log['WG_Final'] - log['deltaPUT'] * fudge
     log['WGCL'] = log['WG_Final'] - log['WG_Base']
-    log['WGNEED'] = log['WGNEED_uncorrected'] - tempcorr
+    log['WGNEED'] = log['WG_Final'] - log['deltaPUT'] * fudge - tempcorr
+
 
     # Create Trimmed datasets
     if 'I_INH' in logvars:
@@ -86,6 +87,8 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic, tempc
 
     log_VVL1 = log_WGopen[log_WGopen['VVL'] == 1]
     log_VVL0 = log_WGopen[log_WGopen['VVL'] == 0]
+    log_tempcorr = log_VVL0.copy()
+    log_tempcorr = log_tempcorr[log_tempcorr['BOOST'] >= 8]
 
     # Plotting
     syms = ['X' if vvl == 1 else 'O' for vvl in log['VVL']]
@@ -176,6 +179,7 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic, tempc
     high = np.zeros_like(columns0)
     AVG0 = np.zeros_like(columns0)
     AVGtemp = np.zeros_like(columns0)
+#    coefarray = np.zeros_like(columns0)
 
     for i in range(len(wgxaxis)):
         temp = log_VVL0.copy()
@@ -208,10 +212,14 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic, tempc
             AVGtemp[j,i] = temp['WGNEED'].mean()
             COUNT0[j, i] = len(temp)
             # current[j, i] = interp2d(oldwgxaxis, oldwgyaxis, oldWG1)(wgxaxis[i], wgyaxis[j])[0]
-            if len(temp) > 2:
-                tempcoef = np.polyfit(temp['AMBTEMP'], temp['WGNEED_uncorrected'] / 100, 1)
-                totalcoef = totalcoef+tempcoef[0]
-                countcoef = countcoef + 1
+            templog_tempcorr = log_tempcorr[log_tempcorr['X'] == i]
+            templog_tempcorr = templog_tempcorr[templog_tempcorr['Y'] == j]
+            if len(templog_tempcorr) > 2 and max(templog_tempcorr['AMBTEMP']) > min(templog_tempcorr['AMBTEMP'] + 15):
+                tempcoef = np.polyfit(templog_tempcorr['AMBTEMP'], templog_tempcorr['WGNEED_uncorrected'] / 100, 1)
+                totalcoef = totalcoef+tempcoef[0]*len(templog_tempcorr)
+                countcoef = countcoef + len(templog_tempcorr)
+#                coefarray[j, i] = tempcoef[0]
+
 
 
             if COUNT0[j, i] > 3:
@@ -228,8 +236,24 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic, tempc
                     AVG0[j, i] = current[j, i]
             else:
                 AVG0[j, i] = current[j, i]
+    Z = log_VVL0['WGNEED']
     AVG0 = np.round(AVG0 * 16384) / 16384
-    AVGcoef = totalcoef / countcoef
+    if countcoef > 0:
+        AVGcoef = totalcoef / countcoef
+    else:
+        AVGcoef = "Not enough data"
+
+#    x = log_VVL0['EFF']
+#    y = log_VVL0['IFF']
+#    X = x
+#    Y = y
+
+#    A = np.array([X * 0 + 1, X, Y, Y ** 2]).T
+#    B = Z
+
+#    coeff, r, rank, s = np.linalg.lstsq(A, B)
+
+
 
     # Return results as pandas DataFrames
     Res_1 = pd.DataFrame(AVG1, columns=exhlabels, index=intlabels)
