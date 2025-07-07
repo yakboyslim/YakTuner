@@ -5,13 +5,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2a81625d-3a2f-4b79-8cf5-9164183627ab" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/LPFP.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/MFF.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/YAKtunerCONVERTED.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/YAKtunerCONVERTED.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/BinRead.py" beforeDir="false" afterPath="$PROJECT_DIR$/BinRead.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/KNK.py" beforeDir="false" afterPath="$PROJECT_DIR$/KNK.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/MAF.py" beforeDir="false" afterPath="$PROJECT_DIR$/MAF.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/WG.py" beforeDir="false" afterPath="$PROJECT_DIR$/WG.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/YAKtuner.py" beforeDir="false" afterPath="$PROJECT_DIR$/YAKtuner.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/map_definitions.csv" beforeDir="false" afterPath="$PROJECT_DIR$/map_definitions.csv" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/variables.csv" beforeDir="false" afterPath="$PROJECT_DIR$/variables.csv" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -69,6 +72,11 @@
     "settings.editor.selected.configurable": "preferences.pluginManager"
   }
 }]]></component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\Sam\PycharmProjects\YAKtunerCONVERTED" />
+    </key>
+  </component>
   <component name="RunManager" selected="Python.YAKtuner">
     <configuration name="KNK" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="YAKtunerCONVERTED" />
@@ -148,6 +156,11 @@
             <list>
               <RecentGroup>
                 <option name="FILTER_VALUES">
+                  <option value="Gemini-recode" />
+                </option>
+              </RecentGroup>
+              <RecentGroup>
+                <option name="FILTER_VALUES">
                   <option value="main" />
                 </option>
               </RecentGroup>
@@ -171,7 +184,7 @@
                   <entry key="branch">
                     <value>
                       <list>
-                        <option value="cmd-gain" />
+                        <option value="Gemini-recode" />
                       </list>
                     </value>
                   </entry>
@@ -185,18 +198,6 @@
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/WG.py</url>
-          <line>258</line>
-          <option name="timeStamp" value="40" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/WG.py</url>
-          <line>77</line>
-          <option name="timeStamp" value="48" />
-        </line-breakpoint>
-      </breakpoints>
       <default-breakpoints>
         <breakpoint type="python-exception">
           <properties notifyOnTerminate="true" exception="BaseException">

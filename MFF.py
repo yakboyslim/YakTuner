@@ -1,12 +1,12 @@
 """
-Mass Airflow (MAF) Correction Tuning Module
+Multiplicative Fuel Factor (MFF) Tuning Module
 
 This module analyzes engine logs to calculate and recommend adjustments to the
-four primary MAF correction tables (IDX0-IDX3). It processes fuel trim data
-to determine the required additive MAF correction, fits a 3D surface to this
+five primary MFF tables (IDX0-IDX4). It processes fuel trim data
+to determine the required multiplicative fuel factor, fits a 3D surface to this
 data, and applies a confidence-based algorithm to generate new table values.
 
-The results are presented in a 2x2 grid of tables and optional interactive
+The results are presented in a 2x3 grid of tables and optional interactive
 3D plots for detailed visual analysis.
 """
 
@@ -46,10 +46,10 @@ class ColoredTable(Table):
 
 # --- Helper Functions ---
 
-def _get_maf_parameters():
-    """Shows dialogs to get user inputs for MAF tuning."""
+def _get_mff_parameters():
+    """Shows dialogs to get user inputs for MFF tuning."""
     params = {
-        'confidence': 1 - float(simpledialog.askstring("MAF Inputs", "Confidence required to make change:", initialvalue="0.25")),
+        'confidence': 1 - float(simpledialog.askstring("MFF Inputs", "Confidence required to make change:", initialvalue="0.5")),
         'show_3d_plot': messagebox.askyesno(
             "3D Visualization",
             "Would you like to visualize the results in a 3D plot?\n(This can help in understanding the changes)"
@@ -57,62 +57,62 @@ def _get_maf_parameters():
     }
     return params
 
-def _prepare_maf_data(log, logvars):
+def _prepare_mff_data(log, logvars):
     """Adds derived columns, filters log data, and warns about missing variables."""
-    # Use .loc for direct assignment
-    log.loc[:, 'MAP'] = log['MAP'] * 10
-
     # --- FIX: Add .copy() after filtering to prevent SettingWithCopyWarning ---
     if "OILTEMP" in logvars:
         log = log[log['OILTEMP'] > 180].copy()
 
+    # Use .loc to ensure we are modifying the DataFrame directly, not a copy.
     if 'LAM_DIF' not in logvars:
         log.loc[:, 'LAM_DIF'] = 1/log['LAMBDA_SP'] - 1/log['LAMBDA']
         messagebox.showwarning('Recommendation', 'Recommend logging LAM DIF. Using calculated value, but may introduce inaccuracy.')
 
-    # This logic is sound, but we'll assign the final result with .loc
+    # --- Corrected Fuel Trim Logic ---
     if "FAC_MFF_ADD" in logvars:
-        final_ltft = log["FAC_MFF_ADD"]
+        log.loc[:, 'final_ltft'] = log["FAC_MFF_ADD"]
     else:
-        final_ltft = log['LTFT']
+        log.loc[:, 'final_ltft'] = log['STFT']
 
     if 'FAC_LAM_OUT' in logvars:
-        final_stft = log['FAC_LAM_OUT']
+        log.loc[:, 'final_stft'] = log['FAC_LAM_OUT']
     else:
-        final_stft = log['STFT']
+        log.loc[:, 'final_stft'] = log['STFT']
 
-    # --- FIX: Use .loc for final assignment ---
-    log.loc[:, 'ADD_MAF'] = final_stft + final_ltft - log['LAM_DIF']
+    # --- Core Calculation Change: Create a MULTIPLICATIVE factor ---
+    additive_correction = (log['final_stft'] + log['final_ltft'])/100 - log['LAM_DIF']
+    log.loc[:, 'MFF_FACTOR'] = 1.0 + additive_correction
 
-    if 'MAF_COR' in logvars:
-        log.loc[:, 'ADD_MAF'] = log['ADD_MAF'] + log['MAF_COR']
+    # --- FIX: Correctly handle MFF_COR as a valid variable ---
+    if 'MFF_COR' in logvars:
+        log.loc[:, 'MFF_FACTOR'] = additive_correction + log['MFF_COR']
     else:
-        messagebox.showwarning('Recommendation', 'Recommend logging MAF_COR for increased accuracy.')
+        messagebox.showwarning('Recommendation', 'Recommend logging MFF_COR for increased accuracy.')
 
-    # This line already correctly uses .copy()
+    # --- FIX: Add .copy() after the final filter ---
     log = log[log['state_lam'] == 1].copy()
-    # The drop operation doesn't need a fix.
+    log = log.drop(columns=['final_ltft', 'final_stft'], errors='ignore')
     return log
 
+def _create_bins(log, mffxaxis, mffyaxis):
+    """Discretizes log data into bins based on MFF map axes."""
+    xedges = [0] + [(mffxaxis[i] + mffxaxis[i + 1]) / 2 for i in range(len(mffxaxis) - 1)] + [np.inf]
+    yedges = [0] + [(mffyaxis[i] + mffyaxis[i + 1]) / 2 for i in range(len(mffyaxis) - 1)] + [np.inf]
 
-def _create_bins(log, mafxaxis, mafyaxis):
-    """Discretizes log data into bins based on MAF map axes."""
-    xedges = [0] + [(mafxaxis[i] + mafxaxis[i + 1]) / 2 for i in range(len(mafxaxis) - 1)] + [np.inf]
-    yedges = [0] + [(mafyaxis[i] + mafyaxis[i + 1]) / 2 for i in range(len(mafyaxis) - 1)] + [np.inf]
-
-    # --- FIX: Add duplicates='drop' and use .loc for safe assignment ---
+    # --- FIX: Add duplicates='drop' to handle non-unique bin edges from the tune file ---
+    # Also, use .loc to assign new columns safely and avoid warnings.
     log.loc[:, 'X'] = pd.cut(log['RPM'], bins=xedges, labels=False, duplicates='drop')
-    log.loc[:, 'Y'] = pd.cut(log['MAP'], bins=yedges, labels=False, duplicates='drop')
+    log.loc[:, 'Y'] = pd.cut(log['MAF'], bins=yedges, labels=False, duplicates='drop') # Use Airmass (MAF) for Y-axis
     return log
 
-def _fit_surface_maf(log_data, mafxaxis, mafyaxis):
-    """Fits a 3D surface to the MAF correction data using griddata."""
+def _fit_surface_mff(log_data, mffxaxis, mffyaxis):
+    """Fits a 3D surface to the MFF correction data using griddata."""
     if log_data.empty or len(log_data) < 3:
-        return np.zeros((len(mafyaxis), len(mafxaxis)))
+        return np.ones((len(mffyaxis), len(mffxaxis))) # Default to 1.0 for multiplicative factor
 
-    points = log_data[['RPM', 'MAP']].values
-    values = log_data['ADD_MAF'].values
-    grid_x, grid_y = np.meshgrid(mafxaxis, mafyaxis)
+    points = log_data[['RPM', 'MAF']].values
+    values = log_data['MFF_FACTOR'].values
+    grid_x, grid_y = np.meshgrid(mffxaxis, mffyaxis)
 
     fitted_surface = interpolate.griddata(points, values, (grid_x, grid_y), method='linear')
 
@@ -121,22 +121,22 @@ def _fit_surface_maf(log_data, mafxaxis, mafyaxis):
         nearest_fill = interpolate.griddata(points, values, (grid_x[nan_mask], grid_y[nan_mask]), method='nearest')
         fitted_surface[nan_mask] = nearest_fill
 
-    return np.nan_to_num(fitted_surface)
+    return np.nan_to_num(fitted_surface, nan=1.0) # Fill any remaining NaNs with 1.0
 
-def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafyaxis, confidence):
+def _calculate_mff_correction(log_data, blend_surface, old_table, mffxaxis, mffyaxis, confidence):
     """Applies confidence interval logic to determine the final correction table."""
     new_table = old_table.copy()
     changed_mask = np.zeros_like(old_table, dtype=bool)
     max_count = 100.0
     interp_factor = 0.25
 
-    for i in range(len(mafxaxis)):
-        for j in range(len(mafyaxis)):
+    for i in range(len(mffxaxis)):
+        for j in range(len(mffyaxis)):
             cell_data = log_data[(log_data['X'] == i) & (log_data['Y'] == j)]
             count = len(cell_data)
 
             if count > 3:
-                mean, std_dev = stats.norm.fit(cell_data['ADD_MAF'])
+                mean, std_dev = stats.norm.fit(cell_data['MFF_FACTOR'])
                 low_ci, high_ci = stats.norm.interval(confidence, loc=mean, scale=std_dev if std_dev > 0 else 1e-9)
 
                 current_val = old_table[j, i]
@@ -157,33 +157,29 @@ def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafy
                     new_table[j, i] = current_val + change_amount
                     changed_mask[j, i] = True
 
-    # Quantize the final table to the ECU's resolution (5.12 = 256 / 50)
-    recommended_table = np.round(new_table * 5.12) / 5.12
+    # Quantize the final table to a common ECU resolution for multiplicative factors (1/1024)
+    recommended_table = np.round(new_table * 1024) / 1024
     # Recalculate the final change amount after quantization
     final_change = recommended_table - old_table
     return recommended_table, final_change, changed_mask
 
-def _plot_3d_maf_surface(title, mafxaxis, mafyaxis, old_map, new_map, log_data, changed_mask):
-    """
-    Creates an interactive 3D plot to visualize and compare MAF surfaces.
-    The raw data is aggregated by cell and shown as mean points with std dev error bars
-    for improved performance and clarity.
-    """
+def _plot_3d_mff_surface(title, mffxaxis, mffyaxis, old_map, new_map, log_data, changed_mask):
+    """Creates an interactive 3D plot to visualize and compare MFF surfaces."""
     if log_data.empty:
         return
 
     fig = plt.figure(figsize=(15, 10))
     ax = fig.add_subplot(111, projection='3d')
-    X, Y = np.meshgrid(mafxaxis, mafyaxis)
+    X, Y = np.meshgrid(mffxaxis, mffyaxis)
 
     # --- Data Aggregation for Performance ---
-    agg_data = log_data.groupby(['X', 'Y'])['ADD_MAF'].agg(['mean', 'std']).reset_index().fillna(0)
+    agg_data = log_data.groupby(['X', 'Y'])['MFF_FACTOR'].agg(['mean', 'std']).reset_index().fillna(0)
 
     for _, row in agg_data.iterrows():
         x_idx, y_idx = int(row['X']), int(row['Y'])
-        if x_idx < len(mafxaxis) and y_idx < len(mafyaxis):
-            x_coord = mafxaxis[x_idx]
-            y_coord = mafyaxis[y_idx]
+        if x_idx < len(mffxaxis) and y_idx < len(mffyaxis):
+            x_coord = mffxaxis[x_idx]
+            y_coord = mffyaxis[y_idx]
             mean_val = row['mean']
             std_val = row['std']
 
@@ -197,15 +193,15 @@ def _plot_3d_maf_surface(title, mafxaxis, mafyaxis, old_map, new_map, log_data, 
 
     changed_y_indices, changed_x_indices = np.where(changed_mask)
     if changed_y_indices.size > 0:
-        x_coords = mafxaxis[changed_x_indices]
-        y_coords = mafyaxis[changed_y_indices]
+        x_coords = mffxaxis[changed_x_indices]
+        y_coords = mffyaxis[changed_y_indices]
         z_coords = new_map[changed_y_indices, changed_x_indices] + 0.01  # Z-offset
         ax.scatter(x_coords, y_coords, z_coords, c='magenta', marker='X', s=60, label='Changed Cells', depthshade=False)
 
     ax.set_title(title, fontsize=16)
     ax.set_xlabel('Engine Speed (RPM)', fontsize=12)
-    ax.set_ylabel('Manifold Absolute Pressure (MAP)', fontsize=12)
-    ax.set_zlabel('Additive MAF Correction', fontsize=12)
+    ax.set_ylabel('Airmass (MAF)', fontsize=12)
+    ax.set_zlabel('Multiplicative Fuel Factor', fontsize=12)
     ax.invert_yaxis()
 
     # --- Updated Legend ---
@@ -219,13 +215,14 @@ def _plot_3d_maf_surface(title, mafxaxis, mafyaxis, old_map, new_map, log_data, 
     ax.legend(handles=legend_elements, loc='upper left')
     plt.show(block=True)
 
-def _display_maf_results(results, changes):
-    """Creates a Toplevel window with a 2x2 grid to display the MAF tables."""
+def _display_mff_results(results, changes):
+    """Creates a Toplevel window with a 2x3 grid to display the 5 MFF tables."""
     window = Toplevel()
-    window.title("MAF Table Recommendations")
+    window.title("MFF Table Recommendations")
 
-    frames = [Frame(window) for _ in range(4)]
-    grid_positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
+    # Use a 2x3 grid for 5 tables
+    frames = [Frame(window) for _ in range(5)]
+    grid_positions = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1)]
 
     for i, frame in enumerate(frames):
         row, col = grid_positions[i]
@@ -244,46 +241,47 @@ def _display_maf_results(results, changes):
 
 # --- Main Function ---
 
-def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars):
-    """Main orchestrator for the MAF tuning process."""
-    params = _get_maf_parameters()
-    log = _prepare_maf_data(log, logvars)
-    log = _create_bins(log, mafxaxis, mafyaxis)
+def MFF_tune(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars):
+    """Main orchestrator for the MFF tuning process."""
+    params = _get_mff_parameters()
+    log = _prepare_mff_data(log, logvars)
+    log = _create_bins(log, mffxaxis, mffyaxis)
 
     results = {}
     changes = {}
 
-    for idx in range(4):
-        current_table = maftables[idx]
-        idx_modes = np.where(combmodes_MAF == idx)[0]
+    # Loop through all 5 MFF tables
+    for idx in range(5):
+        current_table = mfftables[idx]
+        idx_modes = np.where(combmodes_MFF == idx)[0]
         log_filtered = log[log['CMB'].isin(idx_modes)].copy()
-        log_filtered.dropna(subset=['RPM', 'MAP', 'ADD_MAF'], inplace=True)
+        log_filtered.dropna(subset=['RPM', 'MAF', 'MFF_FACTOR'], inplace=True)
 
         # Fit a 3D surface to the filtered data
-        blend_surface = _fit_surface_maf(log_filtered, mafxaxis, mafyaxis)
+        blend_surface = _fit_surface_mff(log_filtered, mffxaxis, mffyaxis)
 
         # Calculate the final recommended table based on confidence logic
-        recommended_table, final_change, changed_mask = _calculate_maf_correction(
-            log_filtered, blend_surface, current_table, mafxaxis, mafyaxis, params['confidence']
+        recommended_table, final_change, changed_mask = _calculate_mff_correction(
+            log_filtered, blend_surface, current_table, mffxaxis, mffyaxis, params['confidence']
         )
 
         # Store results
-        xlabels = [str(x) for x in mafxaxis]
-        ylabels = [str(y) for y in mafyaxis]
+        xlabels = [str(x) for x in mffxaxis]
+        ylabels = [str(y) for y in mffyaxis]
         results[f'IDX{idx}'] = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
         changes[f'IDX{idx}'] = final_change
 
         # Optionally visualize the results in 3D
         if params['show_3d_plot']:
-            _plot_3d_maf_surface(
-                title=f"IDX{idx} MAF Correction (Changes Marked)",
-                mafxaxis=mafxaxis,
-                mafyaxis=mafyaxis,
+            _plot_3d_mff_surface(
+                title=f"IDX{idx} MFF Correction (Changes Marked)",
+                mffxaxis=mffxaxis,
+                mffyaxis=mffyaxis,
                 old_map=current_table,
                 new_map=recommended_table,
                 log_data=log_filtered,
                 changed_mask=changed_mask
             )
 
-    _display_maf_results(results, changes)
+    _display_mff_results(results, changes)
     return results

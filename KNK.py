@@ -17,6 +17,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from pandastable import Table
+from utils import ColoredTable, plot_3d_surface
 
 # Set the matplotlib backend for tkinter compatibility
 matplotlib.use('TkAgg')
@@ -57,7 +58,7 @@ def _get_knock_parameters():
     params = {
         'max_adv': float(simpledialog.askstring("Knock Inputs", "Maximum advance if no knock seen:", initialvalue="0.75")),
         'confidence': 1 - float(simpledialog.askstring("Knock Inputs", "Confidence Required to confirm knock:", initialvalue="0.75")),
-        'map_num': simpledialog.askinteger("Select Map", "Select a SP Map 1-5 (0 is no SP Map):", minvalue=0, maxvalue=5)
+        'map_num': simpledialog.askinteger("Select Map", "Select a SP Map 1-5, or 6 for Flex (0 is no SP Map):", minvalue=0, maxvalue=6)
     }
     return params
 
@@ -79,10 +80,17 @@ def _prepare_knock_data(log):
 
     outlier_scores = np.nan_to_num(outlier_scores)
     rows_with_outlier = np.where(np.any(outlier_scores > 0, axis=1))[0]
+
+    # --- FIX: Initialize the 'singlecyl' column with a default value of 0 ---
+    # This ensures the column always exists.
+    log['singlecyl'] = 0
+
+    # Now, only update the rows where an outlier was actually detected.
     if len(rows_with_outlier) > 0:
         outlier_cyl_indices = np.argmax(outlier_scores[rows_with_outlier], axis=1)
         log.loc[rows_with_outlier, 'singlecyl'] = outlier_cyl_indices + 1
-    log['singlecyl'] = log['singlecyl'].fillna(0)
+
+    # The original line that caused the crash is now redundant and has been removed.
 
     # --- Vectorized knock event detection ---
     # A knock event is detected when a knock counter decreases, signifying that the
@@ -103,7 +111,8 @@ def _prepare_knock_data(log):
     log['knock_source_cyl'] = np.nan
 
     # Where 1 cylinder knocked, set it to cyl number (1-4)
-    log.loc[knock_events_mask & (num_knocking_cyls == 1), 'knock_source_cyl'] = single_knock_cyl_idx[num_knocking_cyls == 1] + 1
+    log.loc[knock_events_mask & (num_knocking_cyls == 1), 'knock_source_cyl'] = single_knock_cyl_idx[
+                                                                                    num_knocking_cyls == 1] + 1
 
     # Where >1 cylinder knocked, set it to 0 ("Multiple")
     log.loc[knock_events_mask & (num_knocking_cyls > 1), 'knock_source_cyl'] = 0
@@ -126,29 +135,57 @@ def _calculate_knock_correction(log, igxaxis, igyaxis, params):
     num_x, num_y = len(igxaxis), len(igyaxis)
     correction_map = np.zeros((num_y, num_x))
 
+    # Define a threshold for the number of data points to apply full advance.
+    # If a cell has this many data points with no knock, it gets the full 'max_adv'.
+    max_count_for_full_advance = 100
+
     for i in range(num_x):
         for j in range(num_y):
             cell_data = log[(log['X'] == i) & (log['Y'] == j)]
-            if len(cell_data) > 3:
+            count = len(cell_data)
+
+            if count > 3:
                 knock_events = cell_data[cell_data['knkoccurred']]
-                mean_knock_retard = knock_events['KNKAVG'].mean() if not knock_events.empty else 0.0
+                # This is the average knock value for all data points in the cell,
+                # including any background retard from other cells.
+                mean_cell_knock = cell_data['KNKAVG'].mean()
 
-                mean_cell_knock, std_dev_cell_knock = cell_data['KNKAVG'].mean(), cell_data['KNKAVG'].std()
-                low_ci, high_ci = norm.interval(params['confidence'], loc=mean_cell_knock, scale=std_dev_cell_knock if std_dev_cell_knock > 0 else 1e-9)
+                # --- Knock Retard Logic (for cells with knock events) ---
+                if not knock_events.empty:
+                    # This is the average retard ONLY during the actual knock events.
+                    mean_knock_retard_during_events = knock_events['KNKAVG'].mean()
+                    std_dev_cell_knock = cell_data['KNKAVG'].std()
 
-                if high_ci < 0:
-                    correction_map[j, i] = (high_ci + mean_knock_retard) / 2
-                elif high_ci > 0 and igxaxis[i] > 2500 and igyaxis[j] > 700:
-                    if std_dev_cell_knock > 0:
-                        z = (params['max_adv'] - mean_knock_retard) / std_dev_cell_knock
-                        correction_map[j, i] = params['max_adv'] * (1 - norm.cdf(z))
+                    # Use confidence interval on all cell data to see if retard is statistically significant.
+                    _low_ci, high_ci = norm.interval(
+                        params['confidence'],
+                        loc=mean_cell_knock,
+                        scale=std_dev_cell_knock if std_dev_cell_knock > 0 else 1e-9
+                    )
+
+                    # If the upper bound of the CI is negative, we are confident there is real knock.
+                    # Apply a retard blended from the CI and the event-specific mean.
+                    if high_ci < 0:
+                        correction_map[j, i] = (high_ci + mean_knock_retard_during_events) / 2
+
+                # --- Timing Advance Logic (for cells with NO knock events) ---
+                elif knock_events.empty and igxaxis[i] > 2500 and igyaxis[j] > 700:
+                    # Calculate how much to advance based on our confidence (number of data points).
+                    confidence_weight = min(count, max_count_for_full_advance) / max_count_for_full_advance
+                    advance_amount = params['max_adv'] * confidence_weight
+
+                    # CRITICAL FIX: The final correction is the observed average knock value
+                    # PLUS the calculated advance. This correctly offsets any background
+                    # retard before adding timing, preventing over-advancing.
+                    correction_map[j, i] = mean_cell_knock + advance_amount
 
     correction_map = np.nan_to_num(correction_map)
+    # Ensure we don't exceed the max advance in the positive direction.
+    # The final value can still be negative if a large background retard exists.
     correction_map = np.minimum(correction_map, params['max_adv'])
 
     # --- ECU Value Quantization ---
     # Rounds the correction to the nearest value the ECU can represent.
-    # 5.333... = 16/3, 2.666... = 8/3.
     intermediate = np.ceil(correction_map * (16 / 3)) / (16 / 3)
     final_correction = np.round(intermediate * (8 / 3)) / (8 / 3)
 
