@@ -22,6 +22,7 @@ from pandastable import Table
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
+from utils import ColoredTable, plot_3d_surface
 
 # --- Helper Functions ---
 
@@ -32,7 +33,6 @@ def _get_wg_tuning_parameters():
 
     params = {
         'fudge': float(simpledialog.askstring("WG Inputs", "PUT fudge factor:", initialvalue="0.71")),
-        'maxdelta': float(simpledialog.askstring("WG Inputs", "Maximum PUT delta:", initialvalue="10")),
         'minboost': float(simpledialog.askstring("WG Inputs", "Minimum Boost:", initialvalue="0"))
     }
 
@@ -47,10 +47,8 @@ def _get_wg_tuning_parameters():
 def _plot_3d_surfaces(title, wgxaxis, wgyaxis, old_map, new_map, log_data, WGlogic, changed_mask):
     """
     Creates an interactive 3D plot to visualize and compare surfaces.
-    - Original WG map (wireframe)
-    - Recommended WG map (surface)
-    - Raw WGNEED data (scatter)
-    - Markers for changed cells (scatter)
+    The raw data is aggregated by cell and shown as mean points with std dev error bars
+    for improved performance and clarity.
     """
     if log_data.empty:
         print(f"Skipping 3D plot for {title}: No log data available.")
@@ -58,30 +56,33 @@ def _plot_3d_surfaces(title, wgxaxis, wgyaxis, old_map, new_map, log_data, WGlog
 
     fig = plt.figure(figsize=(15, 10))
     ax = fig.add_subplot(111, projection='3d')
-
-    # Create a meshgrid for the surface plots
     X, Y = np.meshgrid(wgxaxis, wgyaxis)
 
-    # 1. Plot the raw WGNEED data points from the log
-    ax.scatter(log_data['EFF'], log_data['IFF'], log_data['WGNEED'], c='red', marker='o', label='Raw WGNEED Data', depthshade=True, s=20)
+    # --- Data Aggregation for Performance ---
+    agg_data = log_data.groupby(['X', 'Y'])['WGNEED'].agg(['mean', 'std']).reset_index().fillna(0)
 
-    # 2. Plot the original map as a wireframe for reference
+    for _, row in agg_data.iterrows():
+        x_idx, y_idx = int(row['X']), int(row['Y'])
+        if x_idx < len(wgxaxis) and y_idx < len(wgyaxis):
+            x_coord = wgxaxis[x_idx]
+            y_coord = wgyaxis[y_idx]
+            mean_val = row['mean']
+            std_val = row['std']
+
+            ax.scatter(x_coord, y_coord, mean_val, c='red', marker='o', s=20)
+            ax.plot([x_coord, x_coord], [y_coord, y_coord], [mean_val - std_val, mean_val + std_val],
+                    marker="_", color='red', alpha=0.8)
+
+    # --- Original Plotting Logic (Surfaces and Markers) ---
+    # Note: WG maps are fractions, but WGNEED is 0-100. We plot everything in the 0-100 scale.
     ax.plot_wireframe(X, Y, old_map * 100.0, color='gray', alpha=0.7, label='Original Map')
-
-    # 3. Plot the new recommended map as a colored surface
     ax.plot_surface(X, Y, new_map * 100.0, cmap='viridis', alpha=0.6, label='Recommended Map')
 
-    # 4. Highlight the cells where changes were recommended by plotting markers
-    # Get the coordinates (indices) of the changed cells from the boolean mask
     changed_y_indices, changed_x_indices = np.where(changed_mask)
-
     if changed_y_indices.size > 0:
-        # Get the corresponding X, Y, and Z values for the markers
         x_coords = wgxaxis[changed_x_indices]
         y_coords = wgyaxis[changed_y_indices]
         z_coords = new_map[changed_y_indices, changed_x_indices] * 100.0 + 0.5  # Add a small Z-offset
-
-        # Plot bright markers on top of the surface for changed cells
         ax.scatter(x_coords, y_coords, z_coords, c='magenta', marker='X', s=60, label='Changed Cells', depthshade=False)
 
     # --- Set axis labels based on the selected WG logic ---
@@ -92,20 +93,21 @@ def _plot_3d_surfaces(title, wgxaxis, wgyaxis, old_map, new_map, log_data, WGlog
         x_label = 'Engine Efficiency (EFF)'
         y_label = 'Intake Flow Factor (IFF)'
 
-    # Setting labels and title
     ax.set_title(title, fontsize=16)
     ax.set_xlabel(x_label, fontsize=12)
     ax.set_ylabel(y_label, fontsize=12)
     ax.set_zlabel('Wastegate Duty Cycle (%)', fontsize=12)
-    ax.invert_yaxis()  # Match the 2D table and plot orientation
+    ax.invert_yaxis()
 
-    # Create "proxy artists" for a clean, manual legend that includes the new markers
-    legend_elements = [Line2D([0], [0], color='gray', lw=2, label='Original Map'),
-                       Patch(facecolor=plt.cm.viridis(0.5), edgecolor='k', label='Recommended Map'),
-                       Line2D([0], [0], marker='o', color='w', label='Raw WGNEED Data', markerfacecolor='r', markersize=8),
-                       Line2D([0], [0], marker='X', color='w', label='Changed Cells', markerfacecolor='magenta', markersize=10)]
+    # --- Updated Legend ---
+    legend_elements = [
+        Line2D([0], [0], color='gray', lw=2, label='Original Map'),
+        Patch(facecolor=plt.cm.viridis(0.5), edgecolor='k', label='Recommended Map'),
+        Line2D([0], [0], marker='o', color='w', label='Mean Log Data', markerfacecolor='r', markersize=8),
+        Line2D([0], [0], marker='_', color='r', label='Std. Dev. of Log Data', markersize=8, markeredgewidth=2),
+        Line2D([0], [0], marker='X', color='w', label='Changed Cells', markerfacecolor='magenta', markersize=10)
+    ]
     ax.legend(handles=legend_elements, loc='upper left')
-
     plt.show(block=True)
 
 def _prepare_and_filter_log(log, params, logvars, WGlogic, tempcomp, tempcompaxis):
@@ -141,7 +143,25 @@ def _prepare_and_filter_log(log, params, logvars, WGlogic, tempcomp, tempcompaxi
     else:
         messagebox.showwarning('Recommendation', 'Recommend logging boost. Otherwise, logs are not trimmed for min boost.')
 
-    log = log[abs(log['deltaPUT']) <= params['maxdelta']]
+    # --- New Filtering Logic for PUT Delta ---
+    # Calculate the rate of change of deltaPUT to determine stability.
+    log['deltaPUT_CHANGE'] = log['deltaPUT'].diff().abs()
+
+    # Define the conditions for keeping a data point:
+    # 1. The delta is small (actual pressure is close to the target).
+    is_small_delta = log['deltaPUT'].abs() < 10
+    # 2. The delta is steady (not changing rapidly).
+    is_steady_delta = log['deltaPUT_CHANGE'] < 1.0  # A threshold of 1 kPa per timestep is a good starting point.
+
+    # Combine the conditions. We want data that is EITHER small OR steady.
+    # The first row will have a NaN for the change, so we fill it with False to exclude it.
+    final_mask = is_small_delta | is_steady_delta
+    log = log[final_mask.fillna(False)]
+
+    if log.empty:
+        messagebox.showwarning("WG Tune", "No data points met the criteria (small or steady PUT delta).")
+
+    # Final filter for WG duty cycle range
     log = log[log['WG_Final'] <= 98]
     return log
 

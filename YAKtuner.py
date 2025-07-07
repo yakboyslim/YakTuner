@@ -29,6 +29,8 @@ import BinRead
 import KNK
 import MAF
 import WG
+import LPFP
+import MFF
 
 # --- Constants ---
 # Define constants for configuration filenames to avoid "magic strings".
@@ -39,24 +41,11 @@ MAP_DEFINITIONS_CSV_PATH = "map_definitions.csv"
 def setup_and_run_gui():
     """
     Creates and displays the main GUI for gathering user settings.
-
-    This function builds a user interface using customtkinter to allow the user to:
-    - Select which tuning modules to run (WG, MAF, Ignition).
-    - Choose exactly one firmware version (S50, A05, V30, Custom).
-    - Set module-specific options (like SWG logic for WG tuning).
-    - Configure output and utility options.
-
-    Returns:
-        dict: A dictionary containing all the user's selections. Returns an empty dict
-              if the user closes the window without clicking "CONTINUE".
+    ...
     """
     root = ctk.CTk()
     root.title("YakTuner Settings")
 
-    # FIX: Removed the fixed root.geometry() call.
-    # The window will now automatically resize to fit its content.
-
-    # This dictionary will hold the final settings.
     settings = {}
 
     # --- Main Frames for Organization ---
@@ -70,19 +59,32 @@ def setup_and_run_gui():
     options_frame.pack(pady=10, padx=10, fill="x")
 
     # --- Tuning Module Section ---
+    # --- FIX: The missing line is added back here ---
     tune_label = ctk.CTkLabel(tune_frame, text="Tuning Modules", font=ctk.CTkFont(weight="bold"))
-    tune_label.grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=(5, 0))
+    tune_label.grid(row=0, column=0, columnspan=5, sticky="w", padx=5, pady=(5, 0))  # Adjusted columnspan to 5
 
     cbx_wg = ctk.CTkCheckBox(tune_frame, text="Tune WG?")
     cbx_wg.grid(row=1, column=0, padx=10, pady=5, sticky="w")
     cbx_maf = ctk.CTkCheckBox(tune_frame, text="Tune MAF?")
     cbx_maf.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+    cbx_mff = ctk.CTkCheckBox(tune_frame, text="Tune MFF?")
+    cbx_mff.grid(row=1, column=2, padx=10, pady=5, sticky="w")
     cbx_ign = ctk.CTkCheckBox(tune_frame, text="Tune Ignition?")
-    cbx_ign.grid(row=1, column=2, padx=10, pady=5, sticky="w")
+    cbx_ign.grid(row=1, column=3, padx=10, pady=5, sticky="w")  # Shifted to column 3
+    cbx_lpfp = ctk.CTkCheckBox(tune_frame, text="Tune LPFP PWM?")
+    cbx_lpfp.grid(row=1, column=4, padx=10, pady=5, sticky="w")  # Shifted to column 4
 
     # SWG checkbox, dependent on the WG checkbox
     cbx_swg = ctk.CTkCheckBox(tune_frame, text="Use SWG Logic?", state="disabled")
     cbx_swg.grid(row=2, column=0, padx=10, pady=5, sticky="w")
+
+    # --- START NEW LPFP DRIVE TYPE WIDGETS ---
+    lpfp_drive_type_var = ctk.StringVar(value="2WD")
+    rb_2wd = ctk.CTkRadioButton(tune_frame, text="2WD", variable=lpfp_drive_type_var, value="2WD", state="disabled")
+    rb_2wd.grid(row=2, column=4, padx=10, pady=5, sticky="w") # Corrected column to 4
+    rb_4wd = ctk.CTkRadioButton(tune_frame, text="4WD", variable=lpfp_drive_type_var, value="4WD", state="disabled")
+    rb_4wd.grid(row=3, column=4, padx=10, pady=5, sticky="w") # Corrected column to 4
+    # --- END NEW LPFP DRIVE TYPE WIDGETS ---
 
     def toggle_swg_checkbox():
         """Enable/disable the SWG checkbox based on the WG checkbox state."""
@@ -92,32 +94,40 @@ def setup_and_run_gui():
             cbx_swg.configure(state="disabled")
             cbx_swg.deselect()
 
-    # Link the toggle function to the WG checkbox
+    # --- START NEW LPFP TOGGLE FUNCTION ---
+    def toggle_lpfp_options():
+        """Enable/disable the LPFP drive type radio buttons."""
+        if cbx_lpfp.get() == 1:
+            rb_2wd.configure(state="normal")
+            rb_4wd.configure(state="normal")
+        else:
+            rb_2wd.configure(state="disabled")
+            rb_4wd.configure(state="disabled")
+    # --- END NEW LPFP TOGGLE FUNCTION ---
+
+    # Link the toggle functions to their respective checkboxes
     cbx_wg.configure(command=toggle_swg_checkbox)
+    cbx_lpfp.configure(command=toggle_lpfp_options)
 
     # --- Firmware Section ---
-    firmware_label = ctk.CTkLabel(firmware_frame, text="Firmware Selection (Must choose one)",
-                                  font=ctk.CTkFont(weight="bold"))
-    firmware_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=5, pady=(5, 0))
+    firmware_label = ctk.CTkLabel(firmware_frame, text="Firmware Version", font=ctk.CTkFont(weight="bold"))
+    firmware_label.grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=(5, 0))
 
-    firmware_var = ctk.StringVar(value="S50")  # Set a default value
-    firmware_options = ["S50", "A05", "V30", "Custom"]
-    for i, option in enumerate(firmware_options):
-        rb = ctk.CTkRadioButton(
-            firmware_frame,
-            text=option,
-            variable=firmware_var,
-            value=option
-        )
-        rb.grid(row=1, column=i, padx=10, pady=5, sticky="w")
+    firmware_var = ctk.StringVar(value="S50")
+    rb_s50 = ctk.CTkRadioButton(firmware_frame, text="S50", variable=firmware_var, value="S50")
+    rb_s50.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+    rb_a05 = ctk.CTkRadioButton(firmware_frame, text="A05", variable=firmware_var, value="A05")
+    rb_a05.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+    rb_v30 = ctk.CTkRadioButton(firmware_frame, text="V30", variable=firmware_var, value="V30")
+    rb_v30.grid(row=1, column=2, padx=10, pady=5, sticky="w")
 
     # --- Other Options Section ---
     options_label = ctk.CTkLabel(options_frame, text="Other Options", font=ctk.CTkFont(weight="bold"))
     options_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=(5, 0))
 
-    cbx_save = ctk.CTkCheckBox(options_frame, text="Save results to CSV?")
+    cbx_save = ctk.CTkCheckBox(options_frame, text="Save Results to CSV?")
     cbx_save.grid(row=1, column=0, padx=10, pady=5, sticky="w")
-    cbx_reset_vars = ctk.CTkCheckBox(options_frame, text="Reset Variable Names?")
+    cbx_reset_vars = ctk.CTkCheckBox(options_frame, text="Reset Variable Mappings?")
     cbx_reset_vars.grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
     def on_continue():
@@ -128,10 +138,13 @@ def setup_and_run_gui():
         settings = {
             'WGtune': bool(cbx_wg.get()),
             'MAFtune': bool(cbx_maf.get()),
+            'MFFtune': bool(cbx_mff.get()),
             'IGtune': bool(cbx_ign.get()),
+            'LPFPtune': bool(cbx_lpfp.get()),
             'save': bool(cbx_save.get()),
             'WGlogic': bool(cbx_swg.get()),
-            'firmware': firmware_var.get(),  # Get the single selected firmware
+            'firmware': firmware_var.get(),
+            'LPFPdrivetype': lpfp_drive_type_var.get(),
             'var_reset': bool(cbx_reset_vars.get()),
             'did_continue': True
         }
@@ -163,7 +176,8 @@ def load_data_files():
 
     # Concatenate all selected log files into a single DataFrame.
     try:
-        log_list = [pd.read_csv(f).iloc[:, :-1] for f in log_paths]
+        # FIX: Specify 'latin1' encoding to handle non-UTF-8 characters in log files.
+        log_list = [pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in log_paths]
         log_df = pd.concat(log_list, ignore_index=True)
     except Exception as e:
         messagebox.showerror("Log File Error", f"Could not read or process log files.\nError: {e}")
@@ -202,55 +216,82 @@ def map_log_variables(log_df, varconv_df, var_reset):
     Args:
         log_df (pd.DataFrame): The DataFrame loaded from log files.
         varconv_df (pd.DataFrame): The DataFrame loaded from `variables.csv`.
-        var_reset (bool): If True, forces the user to remap all variables.
+        var_reset (bool): This parameter is kept for signature compatibility but is no longer
+                        used, as the new logic is superior to the old "reset" behavior.
 
     Returns:
-        pd.DataFrame: The log DataFrame with columns renamed.
+        pd.DataFrame or None: The log DataFrame with columns renamed, or None on critical error.
     """
+    # Add a validation check to ensure the essential first two rows exist.
+    if varconv_df.shape[0] < 2:
+        messagebox.showerror(
+            "Configuration Error",
+            f"The '{VARIABLES_CSV_PATH}' file is invalid.\n\n"
+            "It must contain at least two rows:\n"
+            "Row 1: The variable name from your log file (e.g., 'RPM (1/min)').\n"
+            "Row 2: The internal standardized name (e.g., 'RPM').\n\n"
+            "Please correct the file and restart the application."
+        )
+        return None  # Return None to signal a critical failure
+
     varconv = varconv_df.to_numpy()
     logvars = log_df.columns.tolist()
+
+    # This list will hold the indices of variables that could not be found automatically.
     missing_vars_indices = []
 
-    if var_reset:
-        # If reset is checked, mark all variables for re-mapping.
-        missing_vars_indices = list(range(1, varconv.shape[1]))
-    else:
-        # Loop through each variable we need to find (from variables.csv).
-        for i in range(1, varconv.shape[1]):
-            target_var_from_csv = varconv[0, i]
-            normalized_target = normalize_header(target_var_from_csv)
+    # --- REVISED LOGIC ---
+    # The old 'if var_reset:' logic forced a remap of all variables.
+    # This new, simpler logic always attempts to find a match first, and only
+    # prompts the user for variables that are truly missing from the logs.
 
-            match_found = False
-            # Loop through the actual headers in the log file to find a match.
-            for log_header in logvars:
-                normalized_log_header = normalize_header(log_header)
+    # Loop through each variable required by the application (from variables.csv).
+    for i in range(1, varconv.shape[1]):
+        # The target name from the first row of variables.csv (e.g., "RPM (1/min)")
+        target_var_from_csv = varconv[0, i]
+        # A normalized version for robust matching (e.g., "rpm")
+        normalized_target = normalize_header(target_var_from_csv)
 
-                # Compare the normalized versions for a flexible match.
-                if normalized_log_header == normalized_target:
-                    # Found a match! Rename the column in the DataFrame.
-                    log_df = log_df.rename(columns={log_header: varconv[1, i]})
+        match_found = False
 
-                    # Update the mapping file with the exact header we found.
-                    # This self-healing makes future runs faster.
-                    varconv[0, i] = log_header
+        # Loop through the actual headers in the loaded log file to find a match.
+        for log_header in logvars:
+            normalized_log_header = normalize_header(log_header)
 
-                    match_found = True
-                    break  # Move to the next variable in variables.csv
+            # Compare the normalized versions for a flexible, case-insensitive match.
+            if normalized_log_header == normalized_target:
+                # Found a match! Rename the column to the standardized internal name.
+                log_df = log_df.rename(columns={log_header: varconv[1, i]})
 
-            if not match_found:
-                # If we looped through all log headers and found no match,
-                # mark it for manual user intervention.
-                missing_vars_indices.append(i)
+                # Update the mapping array with the exact header we found.
+                # This "self-healing" makes future runs more accurate.
+                varconv[0, i] = log_header
 
-    # If any variables are still missing, prompt the user for each one.
+                match_found = True
+                break  # Match found, move to the next required variable.
+
+        if not match_found:
+            # If we looped through all log headers and found no match,
+            # add this variable's index to the list to be manually mapped.
+            missing_vars_indices.append(i)
+
+    # If the list of missing variables is not empty, prompt the user for each one.
     if missing_vars_indices:
         for i in missing_vars_indices:
             # Use a dictionary to store the result from the dialog callback.
             selection_result = {'selected_var': None}
 
+            # Determine the title for the dialog window.
+            # Use the descriptive name from the 3rd row if it exists and is not empty.
+            if varconv.shape[0] > 2 and pd.notna(varconv[2, i]):
+                window_title_var_name = varconv[2, i]
+            else:
+                # Otherwise, fall back to the internal variable name from the 2nd row.
+                window_title_var_name = varconv[1, i]
+
             # Create a new Toplevel window for the prompt.
             var_window = Toplevel()
-            var_window.title(f"Select variable for: {varconv[2, i]}")
+            var_window.title(f"Select variable for: {window_title_var_name}")
             var_window.geometry("400x400")
 
             listbox = Listbox(var_window, selectmode='single')
@@ -281,106 +322,166 @@ def map_log_variables(log_df, varconv_df, var_reset):
 
     return log_df
 
-
 def main():
     """
-    Main function to orchestrate the entire tuning process.
+    The main execution function of the application.
     """
-    current_dir = os.getcwd()
-
-    # --- 1. Get User Input from GUI ---
+    # 1. Get user settings from the GUI.
     settings = setup_and_run_gui()
     if not settings.get('did_continue'):
-        print("User closed the GUI. Exiting.")
+        print("Operation cancelled by user.")
         return
 
-    # --- 2. Load Data ---
+    # 2. Load map definitions and variable configurations.
     try:
-        varconv_df = pd.read_csv(os.path.join(current_dir, VARIABLES_CSV_PATH), header=None, dtype=str)
-        map_definitions = pd.read_csv(os.path.join(current_dir, MAP_DEFINITIONS_CSV_PATH))
+        # Specify 'latin1' encoding to handle non-UTF-8 characters.
+        map_definitions = pd.read_csv(MAP_DEFINITIONS_CSV_PATH, encoding='latin1')
+
+        # --- FIX: Add header=None ---
+        # This tells pandas to treat all rows in variables.csv as data,
+        # preventing the first row from being misinterpreted as a header and
+        # subsequently dropped when the file is saved.
+        logvars_df = pd.read_csv(VARIABLES_CSV_PATH, encoding='latin1', header=None)
+
     except FileNotFoundError as e:
-        messagebox.showerror("Configuration Error", f"A required file is missing: {e.filename}")
+        messagebox.showerror("Configuration Error", f"A required CSV file is missing: {e}")
+        return
+    except Exception as e:
+        # Catch other potential reading errors.
+        messagebox.showerror("Configuration File Error", f"Could not read a config file.\nError: {e}")
         return
 
+    # 3. Get paths for the binary and log files.
     log_df, bin_path, log_paths = load_data_files()
     if log_df is None:
-        print("User cancelled file selection. Exiting.")
+        # User cancelled one of the file dialogs.
+        print("File selection cancelled. Exiting.")
         return
 
-    # --- 3. Process and Map Log Variables ---
-    log_df = map_log_variables(log_df, varconv_df, settings['var_reset'])
+    # 4. Map log variables to standard names, prompting user if needed.
+    log_df = map_log_variables(log_df, logvars_df, settings['var_reset'])
+    if log_df is None:
+        # This check handles critical errors from the mapping function.
+        print("Halting execution due to an error in variable mapping.")
+        return
+
     logvars = log_df.columns.tolist()
 
-    # --- 4. Read Tune Data from Binary File ---
-    #
-    # REFACTORED LOGIC: Handle the single firmware selection from the radio buttons.
-    # This is cleaner and more robust than the previous if/elif chain.
-    #
-    selected_firmware = settings['firmware']
-    if selected_firmware == 'Custom':
-        firmware_col = 'address_custom'
-    else:
-        firmware_col = f"address_{selected_firmware}"
-
-    # Validate that the required address column exists in the map definitions CSV.
-    if firmware_col not in map_definitions.columns:
-        messagebox.showerror(
-            "Configuration Error",
-            f"The selected firmware '{selected_firmware}' requires a column named '{firmware_col}' "
-            "in map_definitions.csv, but it was not found."
-        )
-        return
-
+    # Determine the correct firmware column to use for map addresses.
+    firmware_col = f"address_{settings['firmware']}"
     # Define dynamic overrides. If "SWG?" is checked, we override the resolution for WG axes.
     overrides = {}
     if settings['WGlogic']:
         overrides['wgyaxis'] = {'res': 1 / 0.082917524986648}
         overrides['wgxaxis'] = {'res': 1.0}
-
     # Read ALL maps from the binary file in a single, efficient function call.
     all_maps = BinRead.read_maps_from_config(bin_path, map_definitions, firmware_col, overrides)
 
     # Unpack the returned dictionary into variables for the tuning modules.
     try:
         maftables = [all_maps['maftable0'], all_maps['maftable1'], all_maps['maftable2'], all_maps['maftable3']]
-        IGNmaps = [all_maps['igmap0'], all_maps['igmap1'], all_maps['igmap2'], all_maps['igmap3'], all_maps['igmap4']]
+        mfftables = [all_maps['MFFtable0'], all_maps['MFFtable1'], all_maps['MFFtable2'], all_maps['MFFtable3'],
+                     all_maps['MFFtable4']]
+        IGNmaps = [all_maps['igmap0'], all_maps['igmap1'], all_maps['igmap2'], all_maps['igmap3'],
+                   all_maps['igmap4'], all_maps['igmap5']]
     except KeyError as e:
-        messagebox.showerror("Map Definition Error", f"A required map is missing: {e}. Please check 'map_definitions.csv'.")
+        messagebox.showerror("Map Definition Error",
+                             f"A required map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
         return
 
     # --- 5. Run Selected Tuning Modules ---
     if settings['WGtune']:
-        Res_1, Res_0 = WG.WG_tune(
-            log_df, all_maps['wgxaxis'], all_maps['wgyaxis'], all_maps['currentWG0'],
-            all_maps['currentWG1'], logvars, True, settings['WGlogic'],
-            all_maps['tempcomp'], all_maps['tempcompaxis']
-        )
-        if settings['save']:
-            output_dir = os.path.dirname(log_paths[0])
-            Res_1.to_csv(os.path.join(output_dir, "VVL1 Results.csv"))
-            Res_0.to_csv(os.path.join(output_dir, "VVL0 Results.csv"))
+        try:
+            Res_WG1, Res_WG0 = WG.WG_tune(
+                log_df,
+                all_maps['wgxaxis'],
+                all_maps['wgyaxis'],
+                all_maps['wgpid0'],
+                all_maps['wgpid1'],
+                logvars,
+                True,  # Placeholder for a 'plot' setting
+                settings['WGlogic'],
+                all_maps['tempcomp'],
+                all_maps['tempcompaxis']
+            )
+            if settings['save'] and Res_WG1 is not None and Res_WG0 is not None:
+                output_dir = os.path.dirname(log_paths[0])
+                Res_WG1.to_csv(os.path.join(output_dir, "WG1_Results.csv"))
+                Res_WG0.to_csv(os.path.join(output_dir, "WG0_Results.csv"))
+        except KeyError as e:
+            messagebox.showerror("Map Definition Error",
+                                 f"A required WG map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
 
     if settings['MAFtune']:
-        MAFresults = MAF.MAF_tune(
-            log_df, all_maps['mafxaxis'], all_maps['mafyaxis'],
-            maftables, all_maps['combmodes'], logvars
-        )
-        if settings['save']:
-            output_dir = os.path.dirname(log_paths[0])
-            for idx in range(4):
-                MAFresults[f"IDX{idx}"].to_csv(os.path.join(output_dir, f"MAF_STD[{idx}] Results.csv"))
+        try:
+            Res_MAF = MAF.MAF_tune(
+                log_df,
+                all_maps['mafxaxis'],
+                all_maps['mafyaxis'],
+                maftables,
+                all_maps['combmodes_MAF'],
+                logvars
+            )
+            if settings['save'] and Res_MAF is not None:
+                output_dir = os.path.dirname(log_paths[0])
+                for i in range(4):
+                    Res_MAF[f'IDX{i}'].to_csv(os.path.join(output_dir, f"MAF_IDX{i}_Results.csv"))
+        except KeyError as e:
+            messagebox.showerror("Map Definition Error",
+                                 f"A required MAF map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
+
+    if settings['MFFtune']:
+        try:
+            Res_MFF = MFF.MFF_tune(
+                log_df,
+                all_maps['MFFxaxis'],
+                all_maps['MFFyaxis'],
+                mfftables,
+                all_maps['combmodes_MFF'],
+                logvars
+            )
+            if settings['save'] and Res_MFF is not None:
+                output_dir = os.path.dirname(log_paths[0])
+                for i in range(5):  # Loop through 5 tables
+                    Res_MFF[f'IDX{i}'].to_csv(os.path.join(output_dir, f"MFF_IDX{i}_Results.csv"))
+        except KeyError as e:
+            messagebox.showerror("Map Definition Error",
+                                 f"A required MFF map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
 
     if settings['IGtune']:
-        # CORRECTED call with the right number of arguments
-        Res_KNK = KNK.KNK(
-            log_df,
-            all_maps['igxaxis'],
-            all_maps['igyaxis'],
-            IGNmaps
-        )
-        if settings['save']:
-            output_dir = os.path.dirname(log_paths[0])
-            Res_KNK.to_csv(os.path.join(output_dir, "KNK Results.csv"))
+        try:
+            Res_KNK = KNK.KNK(
+                log_df,
+                all_maps['igxaxis'],
+                all_maps['igyaxis'],
+                IGNmaps
+            )
+            if settings['save'] and Res_KNK is not None:
+                output_dir = os.path.dirname(log_paths[0])
+                Res_KNK.to_csv(os.path.join(output_dir, "IGN_Results.csv"))
+        except KeyError as e:
+            messagebox.showerror("Map Definition Error",
+                                 f"A required Ignition map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
+
+    if settings['LPFPtune']:
+        try:
+            # Select the correct table based on user's 2WD/4WD choice
+            table_to_correct = all_maps['lpfppwm'] if settings['LPFPdrivetype'] == '2WD' else all_maps['lpfppwm4wd']
+
+            Res_LPFP = LPFP.LPFP_tune(
+                log_df,
+                all_maps['lpfppwmxaxis'],
+                all_maps['lpfppwmyaxis'],
+                table_to_correct,
+                logvars
+            )
+            if settings['save'] and Res_LPFP is not None:
+                output_dir = os.path.dirname(log_paths[0])
+                drive_type = settings['LPFPdrivetype']
+                Res_LPFP.to_csv(os.path.join(output_dir, f"LPFP_{drive_type}_Results.csv"))
+        except KeyError as e:
+            messagebox.showerror("Map Definition Error",
+                                 f"A required LPFP map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
 
     messagebox.showinfo("Complete", "Tuning process has finished.")
 
