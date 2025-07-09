@@ -5,19 +5,17 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2a81625d-3a2f-4b79-8cf5-9164183627ab" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/tuning_loader.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/xdf_parser.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/BinRead.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/KNK.py" beforeDir="false" afterPath="$PROJECT_DIR$/KNK.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/LPFP.py" beforeDir="false" afterPath="$PROJECT_DIR$/LPFP.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/MAF.py" beforeDir="false" afterPath="$PROJECT_DIR$/MAF.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/MFF.py" beforeDir="false" afterPath="$PROJECT_DIR$/MFF.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/WG.py" beforeDir="false" afterPath="$PROJECT_DIR$/WG.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/YAKtuner.py" beforeDir="false" afterPath="$PROJECT_DIR$/YAKtuner.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/map_definitions.csv" beforeDir="false" afterPath="$PROJECT_DIR$/map_definitions.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/YAKtuner.spec" beforeDir="false" afterPath="$PROJECT_DIR$/YAKtuner.spec" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/dist/YAKtuner.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/dist/structure.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/dist/variables.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tuning_loader.py" beforeDir="false" afterPath="$PROJECT_DIR$/tuning_loader.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

@@ -35,7 +35,6 @@ def _get_mff_parameters():
 
 def _prepare_mff_data(log, logvars):
     """Adds derived columns, filters log data, and warns about missing variables."""
-    # --- FIX: Add .copy() after filtering to prevent SettingWithCopyWarning ---
     if "OILTEMP" in logvars:
         log = log[log['OILTEMP'] > 180].copy()
 
@@ -44,7 +43,6 @@ def _prepare_mff_data(log, logvars):
         log.loc[:, 'LAM_DIF'] = 1/log['LAMBDA_SP'] - 1/log['LAMBDA']
         messagebox.showwarning('Recommendation', 'Recommend logging LAM DIF. Using calculated value, but may introduce inaccuracy.')
 
-    # --- Corrected Fuel Trim Logic ---
     if "FAC_MFF_ADD" in logvars:
         log.loc[:, 'final_ltft'] = log["FAC_MFF_ADD"]
     else:
@@ -59,13 +57,11 @@ def _prepare_mff_data(log, logvars):
     additive_correction = (log['final_stft'] + log['final_ltft'])/100 - log['LAM_DIF']
     log.loc[:, 'MFF_FACTOR'] = 1.0 + additive_correction
 
-    # --- FIX: Correctly handle MFF_COR as a valid variable ---
     if 'MFF_COR' in logvars:
         log.loc[:, 'MFF_FACTOR'] = additive_correction + log['MFF_COR']
     else:
         messagebox.showwarning('Recommendation', 'Recommend logging MFF_COR for increased accuracy.')
 
-    # --- FIX: Add .copy() after the final filter ---
     log = log[log['state_lam'] == 1].copy()
     log = log.drop(columns=['final_ltft', 'final_stft'], errors='ignore')
     return log
@@ -75,7 +71,6 @@ def _create_bins(log, mffxaxis, mffyaxis):
     xedges = [0] + [(mffxaxis[i] + mffxaxis[i + 1]) / 2 for i in range(len(mffxaxis) - 1)] + [np.inf]
     yedges = [0] + [(mffyaxis[i] + mffyaxis[i + 1]) / 2 for i in range(len(mffyaxis) - 1)] + [np.inf]
 
-    # --- FIX: Add duplicates='drop' to handle non-unique bin edges from the tune file ---
     # Also, use .loc to assign new columns safely and avoid warnings.
     log.loc[:, 'X'] = pd.cut(log['RPM'], bins=xedges, labels=False, duplicates='drop')
     log.loc[:, 'Y'] = pd.cut(log['MAF'], bins=yedges, labels=False, duplicates='drop') # Use Airmass (MAF) for Y-axis
@@ -161,7 +156,6 @@ def _display_mff_results(results, mfftables, parent):
         pt = ColoredTable(table_frame, dataframe=results[f"IDX{i}"], showtoolbar=True, showstatusbar=True)
         pt.editable = False
         pt.show()
-        # --- FIX: Call the new color_cells with both new and old data ---
         pt.color_cells(results[f"IDX{i}"].to_numpy(), mfftables[i])
 
 # --- Main Function ---

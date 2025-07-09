@@ -38,7 +38,6 @@ def _prepare_maf_data(log, logvars):
     # Use .loc for direct assignment
     log.loc[:, 'MAP'] = log['MAP'] * 10
 
-    # --- FIX: Add .copy() after filtering to prevent SettingWithCopyWarning ---
     if "OILTEMP" in logvars:
         log = log[log['OILTEMP'] > 180].copy()
 
@@ -57,7 +56,6 @@ def _prepare_maf_data(log, logvars):
     else:
         final_stft = log['STFT']
 
-    # --- FIX: Use .loc for final assignment ---
     log.loc[:, 'ADD_MAF'] = final_stft + final_ltft - log['LAM_DIF']
 
     if 'MAF_COR' in logvars:
@@ -65,9 +63,7 @@ def _prepare_maf_data(log, logvars):
     else:
         messagebox.showwarning('Recommendation', 'Recommend logging MAF_COR for increased accuracy.')
 
-    # This line already correctly uses .copy()
     log = log[log['state_lam'] == 1].copy()
-    # The drop operation doesn't need a fix.
     return log
 
 
@@ -76,7 +72,6 @@ def _create_bins(log, mafxaxis, mafyaxis):
     xedges = [0] + [(mafxaxis[i] + mafxaxis[i + 1]) / 2 for i in range(len(mafxaxis) - 1)] + [np.inf]
     yedges = [0] + [(mafyaxis[i] + mafyaxis[i + 1]) / 2 for i in range(len(mafyaxis) - 1)] + [np.inf]
 
-    # --- FIX: Add duplicates='drop' and use .loc for safe assignment ---
     log.loc[:, 'X'] = pd.cut(log['RPM'], bins=xedges, labels=False, duplicates='drop')
     log.loc[:, 'Y'] = pd.cut(log['MAP'], bins=yedges, labels=False, duplicates='drop')
     return log
@@ -160,7 +155,6 @@ def _display_maf_results(results, maftables, parent):
         pt = ColoredTable(table_frame, dataframe=results[f"IDX{i}"], showtoolbar=True, showstatusbar=True)
         pt.editable = False
         pt.show()
-        # --- FIX: Call the new color_cells with both new and old data ---
         pt.color_cells(results[f"IDX{i}"].to_numpy(), maftables[i])
 
 # --- Main Function ---

@@ -110,7 +110,7 @@ def _create_bins_and_labels(log_df, wgxaxis, wgyaxis):
     log_df['Y'] = pd.cut(log_df['IFF'], wgyedges, labels=False)
     return log_df
 
-def _plot_wg_data(log_VVL0, log_VVL1, wgxaxis, wgyaxis):
+def _plot_wg_data(log_VVL0, log_VVL1, wgxaxis, wgyaxis, WGlogic):
     """Displays a scatter plot of the filtered log data."""
     plt.figure(figsize=(12, 8))
     plt.scatter(log_VVL1['EFF'], log_VVL1['IFF'], s=abs(log_VVL1['WGNEED']), c=log_VVL1['deltaPUT'], marker='x', cmap='RdBu', label='VVL1')
@@ -287,7 +287,7 @@ def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic, tempc
 
     if plot:
         print(" -> Plotting raw WG data for visual inspection...")
-        _plot_wg_data(log_VVL0, log_VVL1, wgxaxis, wgyaxis)
+        _plot_wg_data(log_VVL0, log_VVL1, wgxaxis, wgyaxis, WGlogic)
 
     print(" -> Fitting 3D surface for VVL1...")
     blend1 = _fit_surface(log_VVL1, wgxaxis, wgyaxis)
