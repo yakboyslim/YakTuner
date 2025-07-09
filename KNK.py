@@ -12,7 +12,8 @@ import pandas as pd
 from scipy import stats
 from scipy.stats import norm
 import tkinter as tk
-from tkinter import simpledialog, Toplevel
+# The simpledialog is no longer needed here
+from tkinter import Toplevel
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
@@ -23,45 +24,11 @@ from utils import ColoredTable, plot_3d_surface
 matplotlib.use('TkAgg')
 
 
+
 # --- Helper Classes ---
-
-class ColoredTable(Table):
-    """A pandastable Table subclass that colors cells based on correction value."""
-    def __init__(self, parent=None, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.rowselectedcolor = None  # Disable default row selection highlighting
-
-    def color_cells(self, correction_array):
-        """Color cells green for advance, red for retard, based on the correction values."""
-        self.resetColors()
-        if correction_array.shape != self.model.df.shape:
-            print("Warning: Shape mismatch between correction array and table. Cannot color cells.")
-            return
-
-        for r in range(correction_array.shape[0]):
-            for c in range(correction_array.shape[1]):
-                value = correction_array[r, c]
-                if value > 0:
-                    self.setRowColors(rows=[r], cols=[c], clr='#90EE90')  # Light Green
-                elif value < 0:
-                    self.setRowColors(rows=[r], cols=[c], clr='#FFB6C1')  # Light Red
-        self.redraw()
 
 
 # --- Helper Functions ---
-
-def _get_knock_parameters():
-    """Shows dialogs to get user inputs for knock tuning parameters."""
-    root = tk.Tk()
-    root.withdraw()
-
-    params = {
-        'max_adv': float(simpledialog.askstring("Knock Inputs", "Maximum advance if no knock seen:", initialvalue="0.75")),
-        'confidence': 1 - float(simpledialog.askstring("Knock Inputs", "Confidence Required to confirm knock:", initialvalue="0.75")),
-        'map_num': simpledialog.askinteger("Select Map", "Select a SP Map 1-5, or 6 for Flex (0 is no SP Map):", minvalue=0, maxvalue=6)
-    }
-    return params
-
 
 def _prepare_knock_data(log):
     """Creates derived columns and identifies knock events in the log data."""
@@ -235,10 +202,9 @@ def _plot_knock_events(log, igxaxis, igyaxis):
     plt.tight_layout()
     plt.show(block=True)
 
-
-def _display_knock_results(result_df, correction_array):
+def _display_knock_results(result_df, old_map_array, parent):
     """Creates a Toplevel window to display the final results in a colored table."""
-    window = Toplevel()
+    window = Toplevel(parent)
     window.title("SP IGN Correction Table")
     window.geometry("800x600")
 
@@ -248,47 +214,58 @@ def _display_knock_results(result_df, correction_array):
     table = ColoredTable(frame, dataframe=result_df, showtoolbar=True, showstatusbar=True)
     table.editable = False
     table.show()
-    table.color_cells(correction_array)
-
-    window.mainloop()
+    # --- FIX: Pass the new and old maps to color_cells for correct comparison ---
+    table.color_cells(result_df.to_numpy(), old_map_array)
 
 
 # --- Main Function ---
 
-def KNK(log, igxaxis, igyaxis, IGNmaps):
+def KNK(log, igxaxis, igyaxis, IGNmaps, max_adv, map_num, parent):
     """
     Analyzes engine logs for knock events and recommends ignition timing corrections.
     """
-    # 1. Get user-defined parameters for the analysis.
-    params = _get_knock_parameters()
+    # 1. Set up parameters for the analysis.
+    print(" -> Initializing KNK analysis...")
+    # Confidence is hardcoded; max_adv and map_num are passed from the GUI.
+    params = {
+        'max_adv': max_adv,
+        'confidence': 0.7
+    }
 
     # 2. Select the base ignition map to apply corrections to.
-    if params['map_num'] == 0:
+    if map_num == 0:
         base_ignition_map = np.zeros((len(igyaxis), len(igxaxis)))
     else:
-        base_ignition_map = IGNmaps[params['map_num'] - 1]
+        # Subtract 1 because maps are 1-indexed in the UI but 0-indexed in the list.
+        base_ignition_map = IGNmaps[map_num - 1]
 
     # 3. Process log data to identify knock events and add derived values.
+    print(" -> Preparing knock data from logs...")
     log = _prepare_knock_data(log)
 
     # 4. Discretize log data into bins corresponding to the ignition map cells.
+    print(" -> Creating data bins from ignition axes...")
     log = _create_bins(log, igxaxis, igyaxis)
 
     # 5. Plot the detected knock events for visual inspection.
+    print(" -> Plotting knock events for visual inspection...")
     _plot_knock_events(log, igxaxis, igyaxis)
 
     # 6. Calculate the recommended ignition timing correction map.
+    print(" -> Calculating ignition correction map...")
     correction_map = _calculate_knock_correction(log, igxaxis, igyaxis, params)
 
     # 7. Create the final recommended ignition map.
     recommended_map = base_ignition_map + correction_map
 
     # 8. Prepare results for display.
+    print(" -> Displaying final results table...")
     xlabels = [str(x) for x in igxaxis]
     ylabels = [str(y) for y in igyaxis]
     result_df = pd.DataFrame(recommended_map, columns=xlabels, index=ylabels)
 
     # 9. Display the final table with colored cells indicating changes.
-    _display_knock_results(result_df, correction_map)
+    # --- FIX: Pass the result DataFrame and the original base map ---
+    _display_knock_results(result_df, base_ignition_map, parent)
 
     return result_df

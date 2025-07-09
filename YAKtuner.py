@@ -23,91 +23,126 @@ import customtkinter as ctk
 import numpy as np
 import pandas as pd
 import re
+import pprint
 
 # Import the custom tuning modules
-import BinRead
 import KNK
 import MAF
 import WG
 import LPFP
 import MFF
+from tuning_loader import TuningData
 
 # --- Constants ---
 # Define constants for configuration filenames to avoid "magic strings".
 VARIABLES_CSV_PATH = "variables.csv"
 MAP_DEFINITIONS_CSV_PATH = "map_definitions.csv"
+XDF_MAP_LIST_CSV = 'maps_to_parse.csv'
 
 
-def setup_and_run_gui():
+def setup_and_run_gui(parent):
     """
     Creates and displays the main GUI for gathering user settings.
-    ...
     """
-    root = ctk.CTk()
-    root.title("YakTuner Settings")
+    # This line now correctly uses the 'parent' argument that is passed in.
+    settings_window = ctk.CTkToplevel(parent)
+    settings_window.title("YakTuner Settings")
+
+    # --- Make the window modal to pause the main script ---
+    settings_window.transient(parent)
+    settings_window.grab_set()
 
     settings = {}
 
+
     # --- Main Frames for Organization ---
-    tune_frame = ctk.CTkFrame(root)
+    tune_frame = ctk.CTkFrame(settings_window)
     tune_frame.pack(pady=10, padx=10, fill="x")
 
-    firmware_frame = ctk.CTkFrame(root)
+    knk_settings_frame = ctk.CTkFrame(settings_window, fg_color="transparent")
+    knk_settings_frame.pack(pady=(0, 10), padx=10, fill="x")
+
+    firmware_frame = ctk.CTkFrame(settings_window)
     firmware_frame.pack(pady=10, padx=10, fill="x")
 
-    options_frame = ctk.CTkFrame(root)
+    options_frame = ctk.CTkFrame(settings_window)
     options_frame.pack(pady=10, padx=10, fill="x")
-
     # --- Tuning Module Section ---
-    # --- FIX: The missing line is added back here ---
     tune_label = ctk.CTkLabel(tune_frame, text="Tuning Modules", font=ctk.CTkFont(weight="bold"))
-    tune_label.grid(row=0, column=0, columnspan=5, sticky="w", padx=5, pady=(5, 0))  # Adjusted columnspan to 5
+    tune_label.grid(row=0, column=0, columnspan=5, sticky="w", padx=5, pady=(5, 10))
 
-    cbx_wg = ctk.CTkCheckBox(tune_frame, text="Tune WG?")
+    # Define variables for checkboxes
+    wg_tuner_var = ctk.BooleanVar()
+    maf_tuner_var = ctk.BooleanVar()
+    mff_tuner_var = ctk.BooleanVar()
+    ign_tuner_var = ctk.BooleanVar()
+    lpfp_tuner_var = ctk.BooleanVar()
+    swg_logic_var = ctk.BooleanVar()
+
+    cbx_wg = ctk.CTkCheckBox(tune_frame, text="Tune WG?", variable=wg_tuner_var)
     cbx_wg.grid(row=1, column=0, padx=10, pady=5, sticky="w")
-    cbx_maf = ctk.CTkCheckBox(tune_frame, text="Tune MAF?")
+    cbx_maf = ctk.CTkCheckBox(tune_frame, text="Tune MAF?", variable=maf_tuner_var)
     cbx_maf.grid(row=1, column=1, padx=10, pady=5, sticky="w")
-    cbx_mff = ctk.CTkCheckBox(tune_frame, text="Tune MFF?")
+    cbx_mff = ctk.CTkCheckBox(tune_frame, text="Tune MFF?", variable=mff_tuner_var)
     cbx_mff.grid(row=1, column=2, padx=10, pady=5, sticky="w")
-    cbx_ign = ctk.CTkCheckBox(tune_frame, text="Tune Ignition?")
-    cbx_ign.grid(row=1, column=3, padx=10, pady=5, sticky="w")  # Shifted to column 3
-    cbx_lpfp = ctk.CTkCheckBox(tune_frame, text="Tune LPFP PWM?")
-    cbx_lpfp.grid(row=1, column=4, padx=10, pady=5, sticky="w")  # Shifted to column 4
+    cbx_ign = ctk.CTkCheckBox(tune_frame, text="Tune Ignition?", variable=ign_tuner_var)
+    cbx_ign.grid(row=1, column=3, padx=10, pady=5, sticky="w")
+    cbx_lpfp = ctk.CTkCheckBox(tune_frame, text="Tune LPFP PWM?", variable=lpfp_tuner_var)
+    cbx_lpfp.grid(row=1, column=4, padx=10, pady=5, sticky="w")
 
     # SWG checkbox, dependent on the WG checkbox
-    cbx_swg = ctk.CTkCheckBox(tune_frame, text="Use SWG Logic?", state="disabled")
+    cbx_swg = ctk.CTkCheckBox(tune_frame, text="Use SWG Logic?", variable=swg_logic_var, state="disabled")
     cbx_swg.grid(row=2, column=0, padx=10, pady=5, sticky="w")
 
-    # --- START NEW LPFP DRIVE TYPE WIDGETS ---
+    # LPFP drive type widgets
     lpfp_drive_type_var = ctk.StringVar(value="2WD")
     rb_2wd = ctk.CTkRadioButton(tune_frame, text="2WD", variable=lpfp_drive_type_var, value="2WD", state="disabled")
-    rb_2wd.grid(row=2, column=4, padx=10, pady=5, sticky="w") # Corrected column to 4
+    rb_2wd.grid(row=2, column=4, padx=10, pady=5, sticky="w")
     rb_4wd = ctk.CTkRadioButton(tune_frame, text="4WD", variable=lpfp_drive_type_var, value="4WD", state="disabled")
-    rb_4wd.grid(row=3, column=4, padx=10, pady=5, sticky="w") # Corrected column to 4
-    # --- END NEW LPFP DRIVE TYPE WIDGETS ---
+    rb_4wd.grid(row=3, column=4, padx=10, pady=5, sticky="w")
 
+    # --- KNK Settings Widgets (Refactored) ---
+    knk_label = ctk.CTkLabel(knk_settings_frame, text="Ignition Tuner Settings", font=ctk.CTkFont(weight="bold"))
+    knk_label.grid(row=0, column=0, columnspan=4, sticky="w", padx=5, pady=(0, 5))
+
+    # Max Advance setting
+    max_adv_label = ctk.CTkLabel(knk_settings_frame, text="Max Advance:")
+    max_adv_label.grid(row=1, column=0, sticky='w', padx=5, pady=2)
+    max_adv_var = ctk.StringVar(value="0.75")
+    max_adv_entry = ctk.CTkEntry(knk_settings_frame, textvariable=max_adv_var, width=100)
+    max_adv_entry.grid(row=1, column=1, sticky='w', padx=5, pady=2)
+
+    # SP Map Number setting
+    map_num_label = ctk.CTkLabel(knk_settings_frame, text="SP Map (0=None, 6=Flex):")
+    map_num_label.grid(row=1, column=2, sticky='w', padx=15, pady=2)
+    map_num_var = ctk.StringVar(value="6")
+    map_num_entry = ctk.CTkEntry(knk_settings_frame, textvariable=map_num_var, width=100)
+    map_num_entry.grid(row=1, column=3, sticky='w', padx=5, pady=2)
+
+    # --- Toggle Functions for UI Interactivity ---
     def toggle_swg_checkbox():
-        """Enable/disable the SWG checkbox based on the WG checkbox state."""
-        if cbx_wg.get() == 1:
-            cbx_swg.configure(state="normal")
-        else:
-            cbx_swg.configure(state="disabled")
-            cbx_swg.deselect()
+        cbx_swg.configure(state="normal" if wg_tuner_var.get() else "disabled")
+        if not wg_tuner_var.get():
+            swg_logic_var.set(False)
 
-    # --- START NEW LPFP TOGGLE FUNCTION ---
     def toggle_lpfp_options():
-        """Enable/disable the LPFP drive type radio buttons."""
-        if cbx_lpfp.get() == 1:
-            rb_2wd.configure(state="normal")
-            rb_4wd.configure(state="normal")
-        else:
-            rb_2wd.configure(state="disabled")
-            rb_4wd.configure(state="disabled")
-    # --- END NEW LPFP TOGGLE FUNCTION ---
+        state = "normal" if lpfp_tuner_var.get() else "disabled"
+        rb_2wd.configure(state=state)
+        rb_4wd.configure(state=state)
+
+    def toggle_knk_settings():
+        state = "normal" if ign_tuner_var.get() else "disabled"
+        for child in knk_settings_frame.winfo_children():
+            child.configure(state=state)
 
     # Link the toggle functions to their respective checkboxes
     cbx_wg.configure(command=toggle_swg_checkbox)
     cbx_lpfp.configure(command=toggle_lpfp_options)
+    cbx_ign.configure(command=toggle_knk_settings)
+
+    # Set initial state of disabled widgets
+    toggle_knk_settings()
+    toggle_lpfp_options()
 
     # --- Firmware Section ---
     firmware_label = ctk.CTkLabel(firmware_frame, text="Firmware Version", font=ctk.CTkFont(weight="bold"))
@@ -131,30 +166,29 @@ def setup_and_run_gui():
     cbx_reset_vars.grid(row=1, column=1, padx=10, pady=5, sticky="w")
 
     def on_continue():
-        """
-        Callback function to capture settings when the user clicks "CONTINUE".
-        """
         nonlocal settings
         settings = {
-            'WGtune': bool(cbx_wg.get()),
-            'MAFtune': bool(cbx_maf.get()),
-            'MFFtune': bool(cbx_mff.get()),
-            'IGtune': bool(cbx_ign.get()),
-            'LPFPtune': bool(cbx_lpfp.get()),
-            'save': bool(cbx_save.get()),
-            'WGlogic': bool(cbx_swg.get()),
+            'WGtune': wg_tuner_var.get(),
+            'MAFtune': maf_tuner_var.get(),
+            'MFFtune': mff_tuner_var.get(),
+            'IGtune': ign_tuner_var.get(),
+            'LPFPtune': lpfp_tuner_var.get(),
+            'save': cbx_save.get(),
+            'WGlogic': swg_logic_var.get(),
             'firmware': firmware_var.get(),
             'LPFPdrivetype': lpfp_drive_type_var.get(),
-            'var_reset': bool(cbx_reset_vars.get()),
+            'var_reset': cbx_reset_vars.get(),
+            'knk_max_adv': max_adv_var.get(),
+            'knk_map_num': map_num_var.get(),
             'did_continue': True
         }
-        root.quit()
+        settings_window.destroy()
 
-    continue_btn = ctk.CTkButton(root, text="CONTINUE", command=on_continue)
+    continue_btn = ctk.CTkButton(settings_window, text="CONTINUE", command=on_continue)
     continue_btn.pack(pady=20)
 
-    root.mainloop()
-    root.destroy()
+    parent.wait_window(settings_window)
+
     return settings
 
 
@@ -191,7 +225,15 @@ def load_data_files():
     if not bin_path:
         return None, None, None
 
-    return log_df, bin_path, log_paths
+    # --- Select Bin File ---
+    xdf_path = filedialog.askopenfilename(
+        title="Select XDF File",
+        filetypes=[("Definition files", "*.xdf")]
+    )
+    if not xdf_path:
+        return None, None, None
+
+    return log_df, bin_path, log_paths, xdf_path
 
 
 def normalize_header(header_name):
@@ -326,11 +368,22 @@ def main():
     """
     The main execution function of the application.
     """
+
+    print("--- YAKtuner Application Started ---")
+    print("Awaiting user settings from GUI...")
+
+    root = ctk.CTk()
+    root.withdraw()
+
     # 1. Get user settings from the GUI.
-    settings = setup_and_run_gui()
+    settings = setup_and_run_gui(root)
     if not settings.get('did_continue'):
         print("Operation cancelled by user.")
+        root.destroy()  # Clean up the hidden root
         return
+
+    print("[STATUS] User settings collected successfully.")
+    print("\n--- Step 1: Loading Configuration Files ---")
 
     # 2. Load map definitions and variable configurations.
     try:
@@ -342,6 +395,7 @@ def main():
         # preventing the first row from being misinterpreted as a header and
         # subsequently dropped when the file is saved.
         logvars_df = pd.read_csv(VARIABLES_CSV_PATH, encoding='latin1', header=None)
+        print(f"[OK] Loaded '{MAP_DEFINITIONS_CSV_PATH}' and '{VARIABLES_CSV_PATH}'.")
 
     except FileNotFoundError as e:
         messagebox.showerror("Configuration Error", f"A required CSV file is missing: {e}")
@@ -351,12 +405,17 @@ def main():
         messagebox.showerror("Configuration File Error", f"Could not read a config file.\nError: {e}")
         return
 
+    print("\n--- Step 2: Awaiting User File Selection ---")
+
     # 3. Get paths for the binary and log files.
-    log_df, bin_path, log_paths = load_data_files()
+    log_df, bin_path, log_paths, xdf_path = load_data_files()
     if log_df is None:
         # User cancelled one of the file dialogs.
         print("File selection cancelled. Exiting.")
         return
+
+    print(f"[OK] Loaded {len(log_paths)} log file(s) and selected tune files.")
+    print("\n--- Step 3: Mapping Log Variables ---")
 
     # 4. Map log variables to standard names, prompting user if needed.
     log_df = map_log_variables(log_df, logvars_df, settings['var_reset'])
@@ -364,18 +423,39 @@ def main():
         # This check handles critical errors from the mapping function.
         print("Halting execution due to an error in variable mapping.")
         return
-
+    print("[OK] Log variables mapped successfully.")
     logvars = log_df.columns.tolist()
 
     # Determine the correct firmware column to use for map addresses.
+    print("\n--- Step 4: Loading Tune Data from Binary ---")
     firmware_col = f"address_{settings['firmware']}"
-    # Define dynamic overrides. If "SWG?" is checked, we override the resolution for WG axes.
-    overrides = {}
-    if settings['WGlogic']:
-        overrides['wgyaxis'] = {'res': 1 / 0.082917524986648}
-        overrides['wgxaxis'] = {'res': 1.0}
-    # Read ALL maps from the binary file in a single, efficient function call.
-    all_maps = BinRead.read_maps_from_config(bin_path, map_definitions, firmware_col, overrides)
+
+    if not os.path.exists(bin_path):
+        print(f"FATAL: Binary file '{bin_path}' not found. Exiting.")
+        return # Or show an error in the GUI
+
+    # ===========================================
+    # Initialize the loader with the binary file
+    # ===========================================
+    try:
+        loader = TuningData(bin_path)
+    except FileNotFoundError as e:
+        print(e)
+        return # Or show an error in the GUI
+
+    # ===========================================
+    # 2. Load maps from the XDF file first
+    # ===========================================
+    loader.load_from_xdf(xdf_path, XDF_MAP_LIST_CSV)
+
+    # ===========================================
+    # 3. Load any additional maps from the manual config
+    # ===========================================
+    # This will also overwrite any XDF maps if they share a name.
+    # You could add a checkbox in your GUI to enable/disable this.
+    loader.load_from_manual_config(MAP_DEFINITIONS_CSV_PATH, firmware_col)
+
+    all_maps = loader.maps
 
     # Unpack the returned dictionary into variables for the tuning modules.
     try:
@@ -389,38 +469,62 @@ def main():
                              f"A required map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
         return
 
+
+    print("\n--- Step 5: Running Selected Tuning Modules ---")
+
     # --- 5. Run Selected Tuning Modules ---
     if settings['WGtune']:
+        print("\n[MODULE] Running Wastegate (WG) Tuner...")
         try:
+            # --- FIX: Conditionally load temp compensation maps only for SWG logic ---
+            # This prevents a KeyError if the maps are not defined for standard WG tuning.
+            temp_comp_map = None
+            temp_comp_axis = None
+            if settings['WGlogic']:
+                # Only attempt to access these maps if SWG logic is enabled.
+                temp_comp_map = all_maps['tempcomp']
+                temp_comp_axis = all_maps['tempcompaxis']
+        except Exception as e:
+            print(f"[ERROR] WG Tuner failed: {e}")
+            # --- END FIX ---
+
             Res_WG1, Res_WG0 = WG.WG_tune(
                 log_df,
-                all_maps['wgxaxis'],
-                all_maps['wgyaxis'],
+                # Pass the correct X and Y axes based on WGlogic setting
+                all_maps['swgpid0_X'] if settings['WGlogic'] else all_maps['wgpid0_X'],
+                all_maps['swgpid0_Y'] if settings['WGlogic'] else all_maps['wgpid0_Y'],
                 all_maps['wgpid0'],
                 all_maps['wgpid1'],
                 logvars,
                 True,  # Placeholder for a 'plot' setting
                 settings['WGlogic'],
-                all_maps['tempcomp'],
-                all_maps['tempcompaxis']
+                # Pass the potentially None maps to the tuner function
+                temp_comp_map,
+                temp_comp_axis,
+                root
             )
             if settings['save'] and Res_WG1 is not None and Res_WG0 is not None:
                 output_dir = os.path.dirname(log_paths[0])
                 Res_WG1.to_csv(os.path.join(output_dir, "WG1_Results.csv"))
                 Res_WG0.to_csv(os.path.join(output_dir, "WG0_Results.csv"))
         except KeyError as e:
+            # This will now only catch essential missing maps like wgpid0, etc.
             messagebox.showerror("Map Definition Error",
-                                 f"A required WG map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
+                                 f"A required WG map is missing: {e}. Please check your map definitions.")
+        except Exception as e:
+            print(f"[ERROR] WG Tuner failed: {e}")
 
     if settings['MAFtune']:
+        print("\n[MODULE] Running Mass Airflow (MAF) Tuner...")
         try:
             Res_MAF = MAF.MAF_tune(
                 log_df,
-                all_maps['mafxaxis'],
-                all_maps['mafyaxis'],
+                all_maps['maftable0_X'],
+                all_maps['maftable0_Y'],
                 maftables,
                 all_maps['combmodes_MAF'],
-                logvars
+                logvars,
+                root
             )
             if settings['save'] and Res_MAF is not None:
                 output_dir = os.path.dirname(log_paths[0])
@@ -428,17 +532,21 @@ def main():
                     Res_MAF[f'IDX{i}'].to_csv(os.path.join(output_dir, f"MAF_IDX{i}_Results.csv"))
         except KeyError as e:
             messagebox.showerror("Map Definition Error",
-                                 f"A required MAF map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
+                                 f"A required map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
+        except Exception as e:
+            print(f"[ERROR] MAF Tuner failed: {e}")
 
     if settings['MFFtune']:
+        print("\n[MODULE] Running Mass Fuel Factor (MFF) Tuner...")
         try:
             Res_MFF = MFF.MFF_tune(
                 log_df,
-                all_maps['MFFxaxis'],
-                all_maps['MFFyaxis'],
+                all_maps['MFFtable0_X'],
+                all_maps['MFFtable0_Y'],
                 mfftables,
                 all_maps['combmodes_MFF'],
-                logvars
+                logvars,
+                root
             )
             if settings['save'] and Res_MFF is not None:
                 output_dir = os.path.dirname(log_paths[0])
@@ -446,34 +554,54 @@ def main():
                     Res_MFF[f'IDX{i}'].to_csv(os.path.join(output_dir, f"MFF_IDX{i}_Results.csv"))
         except KeyError as e:
             messagebox.showerror("Map Definition Error",
-                                 f"A required MFF map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
+                                 f"A required map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
+        except Exception as e:
+            print(f"[ERROR] MFF Tuner failed: {e}")
 
     if settings['IGtune']:
+        print("\n[MODULE] Running Ignition (KNK) Tuner...")
         try:
+            knk_max_adv = float(settings['knk_max_adv'])
+            knk_map_num = int(settings['knk_map_num'])
+
+            if not (0 <= knk_map_num <= 6):
+                raise ValueError("SP Map Number must be between 0 and 6.")
+
+            # --- FIX: Pass the validated settings to the KNK function ---
             Res_KNK = KNK.KNK(
                 log_df,
                 all_maps['igxaxis'],
                 all_maps['igyaxis'],
-                IGNmaps
-            )
+                IGNmaps,
+                max_adv=knk_max_adv,
+                map_num=knk_map_num,
+                parent=root
+                )
             if settings['save'] and Res_KNK is not None:
                 output_dir = os.path.dirname(log_paths[0])
                 Res_KNK.to_csv(os.path.join(output_dir, "IGN_Results.csv"))
+
+        except ValueError as e:
+            messagebox.showerror("Invalid KNK Input", f"Please check your Ignition Tuner settings.\n\nError: {e}")
         except KeyError as e:
             messagebox.showerror("Map Definition Error",
-                                 f"A required Ignition map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
+                                 f"A required map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
+        except Exception as e:
+            print(f"[ERROR] Ignition Tuner failed: {e}")
 
     if settings['LPFPtune']:
+        print("\n[MODULE] Running Low-Pressure Fuel Pump (LPFP) Tuner...")
         try:
             # Select the correct table based on user's 2WD/4WD choice
             table_to_correct = all_maps['lpfppwm'] if settings['LPFPdrivetype'] == '2WD' else all_maps['lpfppwm4wd']
 
             Res_LPFP = LPFP.LPFP_tune(
                 log_df,
-                all_maps['lpfppwmxaxis'],
-                all_maps['lpfppwmyaxis'],
+                all_maps['lpfppwm_X'],
+                all_maps['lpfppwm_Y'],
                 table_to_correct,
-                logvars
+                logvars,
+                root
             )
             if settings['save'] and Res_LPFP is not None:
                 output_dir = os.path.dirname(log_paths[0])
@@ -482,9 +610,13 @@ def main():
         except KeyError as e:
             messagebox.showerror("Map Definition Error",
                                  f"A required LPFP map is missing: {e}. Please check '{MAP_DEFINITIONS_CSV_PATH}'.")
+        except Exception as e:
+            print(f"[ERROR] LPFP Tuner failed: {e}")
 
-    messagebox.showinfo("Complete", "Tuning process has finished.")
-
+    # Instead, start the Tkinter event loop. The application will now wait
+    # for you to close the result windows.
+    print("Tuning process complete. Displaying results. Close all windows to exit.")
+    root.mainloop()
 
 if __name__ == "__main__":
     # This ensures the script runs only when executed directly.

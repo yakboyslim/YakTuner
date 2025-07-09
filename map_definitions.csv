@@ -1,34 +1,11 @@
 variable_name,description,address_S50,address_A05,address_V30,rows,cols,offset,res,prec
-combmodes_MAF,Combustion Modes index for MAF,0x24B642,0x277EB8,0x22D926,1,39,0,1,uint8
-mafyaxis,MAF Y-Axis (MAP),0x24B62A,0x277EA0,0x22D90E,1,12,0,12.06,uint16
-mafxaxis,MAF X-Axis (RPM),0x24BB66,0x27837C,0x22DE5C,1,8,0,1,uint16
-wgyaxis,WG Y-Axis (IFF),0x21974A,0x23D0E0,0x212E76,1,10,0,16384,uint16
-wgxaxis,WG X-Axis (EFF),0x2196FC,0x23D092,0x212E28,1,16,0,16384,uint16
-wgpid0,WG Base Table VVL0,0x2199F6,0x23D368,0x213134,10,16,32768,16384,uint16
-wgpid1,WG Base Table VVL1,0x219B36,0x23D4A8,0x213274,10,16,32768,16384,uint16
-igyaxis,Ignition Y-Axis (MAF),0x23CDBC,0x267A3E,0x230634,1,16,0,23.59071274298056,uint16
-igxaxis,Ignition X-Axis (RPM),0x23CE5A,0x267ADE,0x2306D2,1,16,0,1,uint16
 tempcomp,Temp Comp Table,0x27D866,0x2B0866,0x13D866,1,6,32768,16384,uint16
 tempcompaxis,Temp Comp Axis,0x27D860,0x2B0860,0x13D860,1,6,64,1.33,uint8
-maftable0,MAF Correction Table 0,0x24B669,0x277EDF,0x22D94D,12,8,128,5.12,uint8
-maftable1,MAF Correction Table 1,0x24B6C9,0x277F3F,0x22D9AD,12,8,128,5.12,uint8
-maftable2,MAF Correction Table 2,0x24B729,0x277F9F,0x22DA0D,12,8,128,5.12,uint8
-maftable3,MAF Correction Table 3,0x24B789,0x277FFF,0x22DA6D,12,8,128,5.12,uint8
 igmap0,Ignition SP Map 1,0x27CF1A,0x2AFE7A,0x13CF1A,16,16,95,2.666666667,uint8
 igmap1,Ignition SP Map 2,0x27D01A,0x2AFF9A,0x13D01A,16,16,95,2.666666667,uint8
 igmap2,Ignition SP Map 3,0x27D11A,0x2B00BA,0x13D11A,16,16,95,2.666666667,uint8
 igmap3,Ignition SP Map 4,0x27D21A,0x2B01DA,0x13D21A,16,16,95,2.666666667,uint8
 igmap4,Ignition SP Map 5,0x27D31A,0x2B02FA,0x13D31A,16,16,95,2.666666667,uint8
 igmap5,Ignition SP Flex Map,0x27F2D0,0x200000,0x200000,16,16,95,2.666666667,uint8
-lpfppwm,Low Pressure Fuel Pump PWM for Pressure vs Flow,0x21158C,0x200000,0x200000,7,8,0,655.36,uint16
-lpfppwm4wd,Low Pressure Fuel Pump PWM for Pressure vs Flow 4Wd,0x2115FC,0x200000,0x200000,7,8,0,655.36,uint16
-lpfppwmxaxis,LPFP PWM X-Axis (Flow SP),0x210EF2,0x200000,0x200000,1,8,0,4.194304,uint16
-lpfppwmyaxis,LPFP PWM Y-Axis (FP SP),0x200CC2,0x200000,0x200000,1,7,0,10,uint16
-combmodes_MFF,Combustion Modes index for MFF,0x237674,0x200000,0x200000,1,39,0,1,uint8
-MFFtable0,Correction factor for the injected fuel mass during multible injection [0],0x239094,0x200000,0x200000,16,16,0,128,uint8
-MFFtable1,Correction factor for the injected fuel mass during multible injection [1],0x239194,0x200000,0x200000,16,16,0,128,uint8
-MFFtable2,Correction factor for the injected fuel mass during multible injection [2],0x239294,0x200000,0x200000,16,16,0,128,uint8
-MFFtable3,Correction factor for the injected fuel mass during multible injection [3],0x239394,0x200000,0x200000,16,16,0,128,uint8
-MFFtable4,Correction factor for the injected fuel mass during multible injection [3],0x239494,0x200000,0x200000,16,16,0,128,uint8
-MFFyaxis,MFF Y-Axis (Airmass),0x23620E,0x200000,0x200000,1,16,0,23.59071274,uint16
-MFFxaxis,MFF X-Axis (RPM),0x2362BE,0x200000,0x200000,1,16,0,1,uint16
+swgpid0_X,WG X-Axis (EFF),0x2196FC,0x23D092,0x212E28,1,16,0,1,uint16
+swgpid0_Y,WG Y-Axis (IFF),0x21974A,0x23D0E0,0x212E76,1,10,0,12.06017667,uint16
