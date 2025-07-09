@@ -30,9 +30,10 @@ class ColoredTable(Table):
         self.redraw()
 
 def plot_3d_surface(title, xaxis, yaxis, old_map, new_map, log_data, changed_mask,
-                    x_label, y_label, z_label, data_col_name, z_scale=1.0):
+                    x_label, y_label, z_label, data_col_name):
     """
     Generic function to create an interactive 3D plot for any tuning module.
+    Assumes all incoming Z-axis data (maps and log_data) is in the final display units.
     """
     if log_data.empty:
         return
@@ -49,19 +50,21 @@ def plot_3d_surface(title, xaxis, yaxis, old_map, new_map, log_data, changed_mas
         if x_idx < len(xaxis) and y_idx < len(yaxis):
             x_coord, y_coord = xaxis[x_idx], yaxis[y_idx]
             mean_val, std_val = row['mean'], row['std']
-            ax.scatter(x_coord, y_coord, mean_val * z_scale, c='red', marker='o', s=20)
+            # Plot log data directly, assuming it's already scaled correctly
+            ax.scatter(x_coord, y_coord, mean_val, c='red', marker='o', s=20)
             ax.plot([x_coord, x_coord], [y_coord, y_coord],
-                    [(mean_val - std_val) * z_scale, (mean_val + std_val) * z_scale],
+                    [mean_val - std_val, mean_val + std_val],
                     marker="_", color='red', alpha=0.8)
 
-    # Plot surfaces and changed cells
-    ax.plot_wireframe(X, Y, old_map * z_scale, color='gray', alpha=0.7, label='Original Map')
-    ax.plot_surface(X, Y, new_map * z_scale, cmap='viridis', alpha=0.6, label='Recommended Map')
+    # Plot surfaces and changed cells directly, assuming they're scaled correctly
+    ax.plot_wireframe(X, Y, old_map, color='gray', alpha=0.7, label='Original Map')
+    ax.plot_surface(X, Y, new_map, cmap='viridis', alpha=0.6, label='Recommended Map')
 
     changed_y, changed_x = np.where(changed_mask)
     if changed_y.size > 0:
         x_coords, y_coords = xaxis[changed_x], yaxis[changed_y]
-        z_coords = new_map[changed_y, changed_x] * z_scale + (0.01 * z_scale) # Z-offset
+        # Use a small, constant Z-offset for the markers
+        z_coords = new_map[changed_y, changed_x] + 0.1
         ax.scatter(x_coords, y_coords, z_coords, c='magenta', marker='X', s=60, label='Changed Cells', depthshade=False)
 
     ax.set_title(title, fontsize=16)

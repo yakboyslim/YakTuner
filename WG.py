@@ -27,88 +27,15 @@ from utils import ColoredTable, plot_3d_surface
 # --- Helper Functions ---
 
 def _get_wg_tuning_parameters():
-    """Shows dialogs to get user inputs for key WG tuning parameters."""
-    root = tk.Tk()
-    root.withdraw()  # Hide the main tkinter window
-
+    """Returns parameters for WG tuning, some hardcoded, some from user input."""
+    # The root window creation is unnecessary and can cause issues.
+    # simpledialog will attach to the application's main window.
     params = {
-        'fudge': float(simpledialog.askstring("WG Inputs", "PUT fudge factor:", initialvalue="0.71")),
-        'minboost': float(simpledialog.askstring("WG Inputs", "Minimum Boost:", initialvalue="0"))
+        'fudge': 0.71,  # Hardcoded as per request
+        'minboost': 0,
+        'show_3d_plot': True  # Hardcoded as per request
     }
-
-    # Add a prompt for 3D visualization
-    params['show_3d_plot'] = messagebox.askyesno(
-        "3D Visualization",
-        "Would you like to visualize the results in a 3D plot?\n(This can help in understanding the changes)"
-    )
-
     return params
-
-def _plot_3d_surfaces(title, wgxaxis, wgyaxis, old_map, new_map, log_data, WGlogic, changed_mask):
-    """
-    Creates an interactive 3D plot to visualize and compare surfaces.
-    The raw data is aggregated by cell and shown as mean points with std dev error bars
-    for improved performance and clarity.
-    """
-    if log_data.empty:
-        print(f"Skipping 3D plot for {title}: No log data available.")
-        return
-
-    fig = plt.figure(figsize=(15, 10))
-    ax = fig.add_subplot(111, projection='3d')
-    X, Y = np.meshgrid(wgxaxis, wgyaxis)
-
-    # --- Data Aggregation for Performance ---
-    agg_data = log_data.groupby(['X', 'Y'])['WGNEED'].agg(['mean', 'std']).reset_index().fillna(0)
-
-    for _, row in agg_data.iterrows():
-        x_idx, y_idx = int(row['X']), int(row['Y'])
-        if x_idx < len(wgxaxis) and y_idx < len(wgyaxis):
-            x_coord = wgxaxis[x_idx]
-            y_coord = wgyaxis[y_idx]
-            mean_val = row['mean']
-            std_val = row['std']
-
-            ax.scatter(x_coord, y_coord, mean_val, c='red', marker='o', s=20)
-            ax.plot([x_coord, x_coord], [y_coord, y_coord], [mean_val - std_val, mean_val + std_val],
-                    marker="_", color='red', alpha=0.8)
-
-    # --- Original Plotting Logic (Surfaces and Markers) ---
-    # Note: WG maps are fractions, but WGNEED is 0-100. We plot everything in the 0-100 scale.
-    ax.plot_wireframe(X, Y, old_map * 100.0, color='gray', alpha=0.7, label='Original Map')
-    ax.plot_surface(X, Y, new_map * 100.0, cmap='viridis', alpha=0.6, label='Recommended Map')
-
-    changed_y_indices, changed_x_indices = np.where(changed_mask)
-    if changed_y_indices.size > 0:
-        x_coords = wgxaxis[changed_x_indices]
-        y_coords = wgyaxis[changed_y_indices]
-        z_coords = new_map[changed_y_indices, changed_x_indices] * 100.0 + 0.5  # Add a small Z-offset
-        ax.scatter(x_coords, y_coords, z_coords, c='magenta', marker='X', s=60, label='Changed Cells', depthshade=False)
-
-    # --- Set axis labels based on the selected WG logic ---
-    if WGlogic:
-        x_label = 'Engine Speed (RPM)'
-        y_label = 'PUT SP (Axis scaled by 10)'
-    else:
-        x_label = 'Engine Efficiency (EFF)'
-        y_label = 'Intake Flow Factor (IFF)'
-
-    ax.set_title(title, fontsize=16)
-    ax.set_xlabel(x_label, fontsize=12)
-    ax.set_ylabel(y_label, fontsize=12)
-    ax.set_zlabel('Wastegate Duty Cycle (%)', fontsize=12)
-    ax.invert_yaxis()
-
-    # --- Updated Legend ---
-    legend_elements = [
-        Line2D([0], [0], color='gray', lw=2, label='Original Map'),
-        Patch(facecolor=plt.cm.viridis(0.5), edgecolor='k', label='Recommended Map'),
-        Line2D([0], [0], marker='o', color='w', label='Mean Log Data', markerfacecolor='r', markersize=8),
-        Line2D([0], [0], marker='_', color='r', label='Std. Dev. of Log Data', markersize=8, markeredgewidth=2),
-        Line2D([0], [0], marker='X', color='w', label='Changed Cells', markerfacecolor='magenta', markersize=10)
-    ]
-    ax.legend(handles=legend_elements, loc='upper left')
-    plt.show(block=True)
 
 def _prepare_and_filter_log(log, params, logvars, WGlogic, tempcomp, tempcompaxis):
     """Adds derived columns and filters the log data to isolate relevant tuning conditions."""
@@ -191,8 +118,12 @@ def _plot_wg_data(log_VVL0, log_VVL1, wgxaxis, wgyaxis):
     cbar = plt.colorbar()
     cbar.set_label('PUT - PUT SP (kPa)')
     plt.gca().invert_yaxis()
-    plt.xlabel('Engine Efficiency (EFF)')
-    plt.ylabel('Intake Flow Factor (IFF)')
+    if WGlogic:
+        plt.xlabel('RPM')
+        plt.ylabel('PUT SP')
+    else:
+        plt.xlabel('Engine Efficiency (EFF)')
+        plt.ylabel('Intake Flow Factor (IFF)')
     plt.title('Wastegate Duty Cycle Need vs. Operating Point')
     plt.grid(True)
     plt.xticks(wgxaxis, rotation=45)
@@ -246,8 +177,8 @@ def _calculate_final_recommendations(log_data, blend, old_table, wgxaxis, wgyaxi
             if count > 3:
                 # Fit a normal distribution to the WGNEED data in the cell.
                 mean, std_dev = stats.norm.fit(cell_data['WGNEED'])
-                # Get a 50% confidence interval.
-                low_ci, high_ci = stats.norm.interval(0.5, loc=mean, scale=std_dev)
+                # Get a 70% confidence interval (hardcoded).
+                low_ci, high_ci = stats.norm.interval(0.7, loc=mean, scale=std_dev)
 
                 # The old table values are fractions; scale them to compare with WGNEED.
                 current_val_scaled = old_table[j, i] * 100.0
@@ -277,60 +208,36 @@ def _calculate_final_recommendations(log_data, blend, old_table, wgxaxis, wgyaxi
     else:
         return final_table
 
-class _ColoredTable(Table):
-    """A pandastable Table subclass that colors cells based on value comparison."""
-    def __init__(self, parent=None, **kwargs):
-        super().__init__(parent, **kwargs)
-
-    def color_cells(self, new_array, old_array):
-        self.resetColors()
-        if new_array.shape != old_array.shape:
-            return
-        for r in range(new_array.shape[0]):
-            for c in range(new_array.shape[1]):
-                if new_array[r, c] > old_array[r, c]:
-                    self.setRowColors(rows=[r], cols=[c], clr='#90EE90')  # Light Green
-                elif new_array[r, c] < old_array[r, c]:
-                    self.setRowColors(rows=[r], cols=[c], clr='#FFB6C1')  # Light Red
-        self.redraw()
-
-def _display_results_table(Res_1, Res_0, oldWG1, oldWG0, temp_comp_results_df):
+def _display_results_table(Res_1, Res_0, oldWG1, oldWG0, temp_comp_results_df, parent):
     """Creates a Toplevel window to display the final results in colored tables."""
-    W1 = Toplevel()
+    W1 = Toplevel(parent)
     W1.title("WG Table Recommendations")
     W1.minsize(600, 800)
 
     # --- VVL1 Table ---
-    # Create a main container for this section
     vvl1_main_frame = Frame(W1)
     vvl1_main_frame.pack(fill='both', expand=True, padx=5, pady=5)
-
-    # Place the label in the main container
     Label1 = tk.Label(vvl1_main_frame, text="VVL1 Recommended Table (Green=Higher, Red=Lower)", font=("Arial", 10, "bold"))
     Label1.pack(side='top', fill='x', pady=(0, 5))
-
-    # Create a dedicated frame that will ONLY contain the pandastable widget
     table_frame1 = Frame(vvl1_main_frame)
     table_frame1.pack(fill='both', expand=True)
 
-    # Create the table inside its dedicated frame, isolating it from other widgets
-    pt1 = _ColoredTable(table_frame1, dataframe=Res_1, showtoolbar=True, showstatusbar=True)
+    # This now uses the imported ColoredTable class
+    pt1 = ColoredTable(table_frame1, dataframe=Res_1, showtoolbar=True, showstatusbar=True)
     pt1.editable = False
     pt1.show()
     pt1.color_cells(Res_1.to_numpy(), oldWG1)
 
-
     # --- VVL0 Table ---
     vvl0_main_frame = Frame(W1)
     vvl0_main_frame.pack(fill='both', expand=True, padx=5, pady=5)
-
     Label0 = tk.Label(vvl0_main_frame, text="VVL0 Recommended Table", font=("Arial", 10, "bold"))
     Label0.pack(side='top', fill='x', pady=(0, 5))
-
     table_frame0 = Frame(vvl0_main_frame)
     table_frame0.pack(fill='both', expand=True)
 
-    pt0 = _ColoredTable(table_frame0, dataframe=Res_0, showtoolbar=True, showstatusbar=True)
+    # This now uses the imported ColoredTable class
+    pt0 = ColoredTable(table_frame0, dataframe=Res_0, showtoolbar=True, showstatusbar=True)
     pt0.editable = False
     pt0.show()
     pt0.color_cells(Res_0.to_numpy(), oldWG0)
@@ -359,91 +266,91 @@ def _display_results_table(Res_1, Res_0, oldWG1, oldWG0, temp_comp_results_df):
             parent=W1
         )
 
-    W1.mainloop()
+#Main Function
 
-# --- Main Function ---
-
-def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic, tempcomp, tempcompaxis):
+def WG_tune(log, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, plot, WGlogic, tempcomp, tempcompaxis, parent):
     """
     Main orchestrator for the WG tuning process.
     """
-    # 1. Get user inputs for tuning parameters.
+    print(" -> Initializing WG analysis...")
     params = _get_wg_tuning_parameters()
 
-    # 2. Prepare and filter log data.
+    print(" -> Preparing and filtering log data...")
     log = _prepare_and_filter_log(log, params, logvars, WGlogic, tempcomp, tempcompaxis)
 
-    # 3. Create bins and split data by VVL state.
+    print(" -> Creating data bins from WG axes...")
     log = _create_bins_and_labels(log, wgxaxis, wgyaxis)
+
+    print(" -> Separating data for VVL0 and VVL1...")
     log_VVL1 = log[log['VVL'] == 1].copy()
     log_VVL0 = log[log['VVL'] == 0].copy()
 
-    # 4. Optionally plot the data for visual inspection.
     if plot:
+        print(" -> Plotting raw WG data for visual inspection...")
         _plot_wg_data(log_VVL0, log_VVL1, wgxaxis, wgyaxis)
 
-    # 5. Fit a 3D surface to the data for each VVL state.
+    print(" -> Fitting 3D surface for VVL1...")
     blend1 = _fit_surface(log_VVL1, wgxaxis, wgyaxis)
+
+    print(" -> Fitting 3D surface for VVL0...")
     blend0 = _fit_surface(log_VVL0, wgxaxis, wgyaxis)
 
-    # 6. Calculate final recommendations based on the fit and confidence intervals.
+    print(" -> Calculating final recommendations for VVL1...")
     final_table_1 = _calculate_final_recommendations(log_VVL1, blend1, oldWG1, wgxaxis, wgyaxis)
+
+    print(" -> Calculating final recommendations for VVL0 and Temp Comp...")
     final_table_0, avg_coef = _calculate_final_recommendations(log_VVL0, blend0, oldWG0, wgxaxis, wgyaxis, calculate_temp_coef=True)
 
-    # 7. Optionally visualize the results in 3D.
     if params['show_3d_plot']:
-        # Create boolean masks to identify which cells have changed.
+        print(" -> Plotting 3D surfaces for comparison...")
         changed_mask_1 = final_table_1 != oldWG1
         changed_mask_0 = final_table_0 != oldWG0
 
-        # Visualize VVL1
-        _plot_3d_surfaces(
+        if WGlogic:
+            x_label, y_label = 'Engine Speed (RPM)', 'PUT SP (Axis scaled by 10)'
+        else:
+            x_label, y_label = 'Engine Efficiency (EFF)', 'Intake Flow Factor (IFF)'
+
+        plot_3d_surface(
             title="VVL1 3D Comparison (Changes Marked)",
-            wgxaxis=wgxaxis,
-            wgyaxis=wgyaxis,
-            old_map=oldWG1,
-            new_map=final_table_1,
-            log_data=log_VVL1,
-            WGlogic=WGlogic,
-            changed_mask=changed_mask_1
+            xaxis=wgxaxis, yaxis=wgyaxis,
+            old_map=oldWG1 * 100.0,
+            new_map=final_table_1 * 100.0,
+            log_data=log_VVL1, changed_mask=changed_mask_1,
+            x_label=x_label, y_label=y_label,
+            z_label='Wastegate Duty Cycle (%)',
+            data_col_name='WGNEED'
         )
-        # Visualize VVL0
-        _plot_3d_surfaces(
+        plot_3d_surface(
             title="VVL0 3D Comparison (Changes Marked)",
-            wgxaxis=wgxaxis,
-            wgyaxis=wgyaxis,
-            old_map=oldWG0,
-            new_map=final_table_0,
-            log_data=log_VVL0,
-            WGlogic=WGlogic,
-            changed_mask=changed_mask_0
+            xaxis=wgxaxis, yaxis=wgyaxis,
+            old_map=oldWG0 * 100.0,
+            new_map=final_table_0 * 100.0,
+            log_data=log_VVL0, changed_mask=changed_mask_0,
+            x_label=x_label, y_label=y_label,
+            z_label='Wastegate Duty Cycle (%)',
+            data_col_name='WGNEED'
         )
 
-    # 8. Generate and prepare temperature compensation results.
+    print(" -> Preparing temperature compensation results...")
     temp_comp_results_df = None
     if isinstance(avg_coef, (int, float)):
-        # Calculate the intercept of the original temperature compensation table.
         _slope, original_intercept = np.polyfit(tempcompaxis, tempcomp, 1)
-
-        # Calculate the new recommended table using the new slope and old intercept.
         new_tempcomp = (avg_coef * tempcompaxis) + original_intercept
-
-        # Create a DataFrame for easy display.
         temp_df = pd.DataFrame({
             'Temperature': tempcompaxis,
             'Original Comp': tempcomp,
             'Recommended Comp': new_tempcomp
         })
-
-        # Set 'Temperature' as the index and transpose the DataFrame to flip rows/columns.
         temp_comp_results_df = temp_df.set_index('Temperature').T.round(4)
 
-    # 9. Prepare results as DataFrames and display them in a new window.
+    print(" -> Preparing final results as DataFrames...")
     exhlabels = [str(x) for x in wgxaxis]
     intlabels = [str(x) for x in wgyaxis]
     Res_1 = pd.DataFrame(final_table_1, columns=exhlabels, index=intlabels)
     Res_0 = pd.DataFrame(final_table_0, columns=exhlabels, index=intlabels)
 
-    _display_results_table(Res_1, Res_0, oldWG1, oldWG0, temp_comp_results_df)
+    print(" -> Displaying final results tables...")
+    _display_results_table(Res_1, Res_0, oldWG1, oldWG0, temp_comp_results_df, parent)
 
     return Res_1, Res_0

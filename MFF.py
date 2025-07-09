@@ -23,37 +23,13 @@ from utils import ColoredTable, plot_3d_surface
 
 # --- Helper Classes ---
 
-class ColoredTable(Table):
-    """A pandastable Table subclass that colors cells based on correction value."""
-    def __init__(self, parent=None, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.rowselectedcolor = None  # Disable default row selection highlighting
-
-    def color_cells(self, change_array):
-        """Colors cells green for positive changes, red for negative."""
-        self.resetColors()
-        if change_array.shape != self.model.df.shape:
-            return
-
-        for r in range(change_array.shape[0]):
-            for c in range(change_array.shape[1]):
-                value = change_array[r, c]
-                if value > 0.001:  # Use a small threshold to avoid coloring negligible changes
-                    self.setRowColors(rows=[r], cols=[c], clr='#90EE90')  # Light Green
-                elif value < -0.001:
-                    self.setRowColors(rows=[r], cols=[c], clr='#FFB6C1')  # Light Red
-        self.redraw()
-
 # --- Helper Functions ---
 
 def _get_mff_parameters():
-    """Shows dialogs to get user inputs for MFF tuning."""
+    """Returns hardcoded parameters for MFF tuning."""
     params = {
-        'confidence': 1 - float(simpledialog.askstring("MFF Inputs", "Confidence required to make change:", initialvalue="0.5")),
-        'show_3d_plot': messagebox.askyesno(
-            "3D Visualization",
-            "Would you like to visualize the results in a 3D plot?\n(This can help in understanding the changes)"
-        )
+        'confidence': 0.7,
+        'show_3d_plot': True
     }
     return params
 
@@ -163,61 +139,9 @@ def _calculate_mff_correction(log_data, blend_surface, old_table, mffxaxis, mffy
     final_change = recommended_table - old_table
     return recommended_table, final_change, changed_mask
 
-def _plot_3d_mff_surface(title, mffxaxis, mffyaxis, old_map, new_map, log_data, changed_mask):
-    """Creates an interactive 3D plot to visualize and compare MFF surfaces."""
-    if log_data.empty:
-        return
-
-    fig = plt.figure(figsize=(15, 10))
-    ax = fig.add_subplot(111, projection='3d')
-    X, Y = np.meshgrid(mffxaxis, mffyaxis)
-
-    # --- Data Aggregation for Performance ---
-    agg_data = log_data.groupby(['X', 'Y'])['MFF_FACTOR'].agg(['mean', 'std']).reset_index().fillna(0)
-
-    for _, row in agg_data.iterrows():
-        x_idx, y_idx = int(row['X']), int(row['Y'])
-        if x_idx < len(mffxaxis) and y_idx < len(mffyaxis):
-            x_coord = mffxaxis[x_idx]
-            y_coord = mffyaxis[y_idx]
-            mean_val = row['mean']
-            std_val = row['std']
-
-            ax.scatter(x_coord, y_coord, mean_val, c='red', marker='o', s=20)
-            ax.plot([x_coord, x_coord], [y_coord, y_coord], [mean_val - std_val, mean_val + std_val],
-                    marker="_", color='red', alpha=0.8)
-
-    # --- Original Plotting Logic (Surfaces and Markers) ---
-    ax.plot_wireframe(X, Y, old_map, color='gray', alpha=0.7, label='Original Map')
-    ax.plot_surface(X, Y, new_map, cmap='viridis', alpha=0.6, label='Recommended Map')
-
-    changed_y_indices, changed_x_indices = np.where(changed_mask)
-    if changed_y_indices.size > 0:
-        x_coords = mffxaxis[changed_x_indices]
-        y_coords = mffyaxis[changed_y_indices]
-        z_coords = new_map[changed_y_indices, changed_x_indices] + 0.01  # Z-offset
-        ax.scatter(x_coords, y_coords, z_coords, c='magenta', marker='X', s=60, label='Changed Cells', depthshade=False)
-
-    ax.set_title(title, fontsize=16)
-    ax.set_xlabel('Engine Speed (RPM)', fontsize=12)
-    ax.set_ylabel('Airmass (MAF)', fontsize=12)
-    ax.set_zlabel('Multiplicative Fuel Factor', fontsize=12)
-    ax.invert_yaxis()
-
-    # --- Updated Legend ---
-    legend_elements = [
-        Line2D([0], [0], color='gray', lw=2, label='Original Map'),
-        Patch(facecolor=plt.cm.viridis(0.5), edgecolor='k', label='Recommended Map'),
-        Line2D([0], [0], marker='o', color='w', label='Mean Log Data', markerfacecolor='r', markersize=8),
-        Line2D([0], [0], marker='_', color='r', label='Std. Dev. of Log Data', markersize=8, markeredgewidth=2),
-        Line2D([0], [0], marker='X', color='w', label='Changed Cells', markerfacecolor='magenta', markersize=10)
-    ]
-    ax.legend(handles=legend_elements, loc='upper left')
-    plt.show(block=True)
-
-def _display_mff_results(results, changes):
+def _display_mff_results(results, mfftables, parent):
     """Creates a Toplevel window with a 2x3 grid to display the 5 MFF tables."""
-    window = Toplevel()
+    window = Toplevel(parent)
     window.title("MFF Table Recommendations")
 
     # Use a 2x3 grid for 5 tables
@@ -237,30 +161,35 @@ def _display_mff_results(results, changes):
         pt = ColoredTable(table_frame, dataframe=results[f"IDX{i}"], showtoolbar=True, showstatusbar=True)
         pt.editable = False
         pt.show()
-        pt.color_cells(changes[f"IDX{i}"])
+        # --- FIX: Call the new color_cells with both new and old data ---
+        pt.color_cells(results[f"IDX{i}"].to_numpy(), mfftables[i])
 
 # --- Main Function ---
 
-def MFF_tune(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars):
+def MFF_tune(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars, parent):
     """Main orchestrator for the MFF tuning process."""
+    print(" -> Initializing MFF analysis...")
     params = _get_mff_parameters()
+
+    print(" -> Preparing MFF data from logs...")
     log = _prepare_mff_data(log, logvars)
+
+    print(" -> Creating data bins from MFF axes...")
     log = _create_bins(log, mffxaxis, mffyaxis)
 
     results = {}
-    changes = {}
-
     # Loop through all 5 MFF tables
     for idx in range(5):
+        print(f" -> Processing MFF Table IDX{idx}...")
         current_table = mfftables[idx]
         idx_modes = np.where(combmodes_MFF == idx)[0]
         log_filtered = log[log['CMB'].isin(idx_modes)].copy()
         log_filtered.dropna(subset=['RPM', 'MAF', 'MFF_FACTOR'], inplace=True)
 
-        # Fit a 3D surface to the filtered data
+        print(f"   -> Fitting 3D surface for IDX{idx}...")
         blend_surface = _fit_surface_mff(log_filtered, mffxaxis, mffyaxis)
 
-        # Calculate the final recommended table based on confidence logic
+        print(f"   -> Calculating correction map for IDX{idx}...")
         recommended_table, final_change, changed_mask = _calculate_mff_correction(
             log_filtered, blend_surface, current_table, mffxaxis, mffyaxis, params['confidence']
         )
@@ -269,19 +198,23 @@ def MFF_tune(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars):
         xlabels = [str(x) for x in mffxaxis]
         ylabels = [str(y) for y in mffyaxis]
         results[f'IDX{idx}'] = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
-        changes[f'IDX{idx}'] = final_change
 
-        # Optionally visualize the results in 3D
         if params['show_3d_plot']:
-            _plot_3d_mff_surface(
+            print(f"   -> Plotting 3D surface for IDX{idx}...")
+            plot_3d_surface(
                 title=f"IDX{idx} MFF Correction (Changes Marked)",
-                mffxaxis=mffxaxis,
-                mffyaxis=mffyaxis,
+                xaxis=mffxaxis,
+                yaxis=mffyaxis,
                 old_map=current_table,
                 new_map=recommended_table,
                 log_data=log_filtered,
-                changed_mask=changed_mask
+                changed_mask=changed_mask,
+                x_label='Engine Speed (RPM)',
+                y_label='Airmass (MAF)',
+                z_label='Multiplicative Fuel Factor',
+                data_col_name='MFF_FACTOR'
             )
 
-    _display_mff_results(results, changes)
+    print(" -> Displaying final results tables...")
+    _display_mff_results(results, mfftables, parent)
     return results

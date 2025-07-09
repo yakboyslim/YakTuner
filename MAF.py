@@ -23,37 +23,13 @@ from utils import ColoredTable, plot_3d_surface
 
 # --- Helper Classes ---
 
-class ColoredTable(Table):
-    """A pandastable Table subclass that colors cells based on correction value."""
-    def __init__(self, parent=None, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.rowselectedcolor = None  # Disable default row selection highlighting
-
-    def color_cells(self, change_array):
-        """Colors cells green for positive changes, red for negative."""
-        self.resetColors()
-        if change_array.shape != self.model.df.shape:
-            return
-
-        for r in range(change_array.shape[0]):
-            for c in range(change_array.shape[1]):
-                value = change_array[r, c]
-                if value > 0.001:  # Use a small threshold to avoid coloring negligible changes
-                    self.setRowColors(rows=[r], cols=[c], clr='#90EE90')  # Light Green
-                elif value < -0.001:
-                    self.setRowColors(rows=[r], cols=[c], clr='#FFB6C1')  # Light Red
-        self.redraw()
-
 # --- Helper Functions ---
 
 def _get_maf_parameters():
-    """Shows dialogs to get user inputs for MAF tuning."""
+    """Returns hardcoded parameters for MAF tuning."""
     params = {
-        'confidence': 1 - float(simpledialog.askstring("MAF Inputs", "Confidence required to make change:", initialvalue="0.25")),
-        'show_3d_plot': messagebox.askyesno(
-            "3D Visualization",
-            "Would you like to visualize the results in a 3D plot?\n(This can help in understanding the changes)"
-        )
+        'confidence': 0.7,
+        'show_3d_plot': True
     }
     return params
 
@@ -163,65 +139,9 @@ def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafy
     final_change = recommended_table - old_table
     return recommended_table, final_change, changed_mask
 
-def _plot_3d_maf_surface(title, mafxaxis, mafyaxis, old_map, new_map, log_data, changed_mask):
-    """
-    Creates an interactive 3D plot to visualize and compare MAF surfaces.
-    The raw data is aggregated by cell and shown as mean points with std dev error bars
-    for improved performance and clarity.
-    """
-    if log_data.empty:
-        return
-
-    fig = plt.figure(figsize=(15, 10))
-    ax = fig.add_subplot(111, projection='3d')
-    X, Y = np.meshgrid(mafxaxis, mafyaxis)
-
-    # --- Data Aggregation for Performance ---
-    agg_data = log_data.groupby(['X', 'Y'])['ADD_MAF'].agg(['mean', 'std']).reset_index().fillna(0)
-
-    for _, row in agg_data.iterrows():
-        x_idx, y_idx = int(row['X']), int(row['Y'])
-        if x_idx < len(mafxaxis) and y_idx < len(mafyaxis):
-            x_coord = mafxaxis[x_idx]
-            y_coord = mafyaxis[y_idx]
-            mean_val = row['mean']
-            std_val = row['std']
-
-            ax.scatter(x_coord, y_coord, mean_val, c='red', marker='o', s=20)
-            ax.plot([x_coord, x_coord], [y_coord, y_coord], [mean_val - std_val, mean_val + std_val],
-                    marker="_", color='red', alpha=0.8)
-
-    # --- Original Plotting Logic (Surfaces and Markers) ---
-    ax.plot_wireframe(X, Y, old_map, color='gray', alpha=0.7, label='Original Map')
-    ax.plot_surface(X, Y, new_map, cmap='viridis', alpha=0.6, label='Recommended Map')
-
-    changed_y_indices, changed_x_indices = np.where(changed_mask)
-    if changed_y_indices.size > 0:
-        x_coords = mafxaxis[changed_x_indices]
-        y_coords = mafyaxis[changed_y_indices]
-        z_coords = new_map[changed_y_indices, changed_x_indices] + 0.01  # Z-offset
-        ax.scatter(x_coords, y_coords, z_coords, c='magenta', marker='X', s=60, label='Changed Cells', depthshade=False)
-
-    ax.set_title(title, fontsize=16)
-    ax.set_xlabel('Engine Speed (RPM)', fontsize=12)
-    ax.set_ylabel('Manifold Absolute Pressure (MAP)', fontsize=12)
-    ax.set_zlabel('Additive MAF Correction', fontsize=12)
-    ax.invert_yaxis()
-
-    # --- Updated Legend ---
-    legend_elements = [
-        Line2D([0], [0], color='gray', lw=2, label='Original Map'),
-        Patch(facecolor=plt.cm.viridis(0.5), edgecolor='k', label='Recommended Map'),
-        Line2D([0], [0], marker='o', color='w', label='Mean Log Data', markerfacecolor='r', markersize=8),
-        Line2D([0], [0], marker='_', color='r', label='Std. Dev. of Log Data', markersize=8, markeredgewidth=2),
-        Line2D([0], [0], marker='X', color='w', label='Changed Cells', markerfacecolor='magenta', markersize=10)
-    ]
-    ax.legend(handles=legend_elements, loc='upper left')
-    plt.show(block=True)
-
-def _display_maf_results(results, changes):
+def _display_maf_results(results, maftables, parent):
     """Creates a Toplevel window with a 2x2 grid to display the MAF tables."""
-    window = Toplevel()
+    window = Toplevel(parent)
     window.title("MAF Table Recommendations")
 
     frames = [Frame(window) for _ in range(4)]
@@ -240,29 +160,34 @@ def _display_maf_results(results, changes):
         pt = ColoredTable(table_frame, dataframe=results[f"IDX{i}"], showtoolbar=True, showstatusbar=True)
         pt.editable = False
         pt.show()
-        pt.color_cells(changes[f"IDX{i}"])
+        # --- FIX: Call the new color_cells with both new and old data ---
+        pt.color_cells(results[f"IDX{i}"].to_numpy(), maftables[i])
 
 # --- Main Function ---
 
-def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars):
+def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars, parent):
     """Main orchestrator for the MAF tuning process."""
+    print(" -> Initializing MAF analysis...")
     params = _get_maf_parameters()
+
+    print(" -> Preparing MAF data from logs...")
     log = _prepare_maf_data(log, logvars)
+
+    print(" -> Creating data bins from MAF axes...")
     log = _create_bins(log, mafxaxis, mafyaxis)
 
     results = {}
-    changes = {}
-
     for idx in range(4):
+        print(f" -> Processing MAF Table IDX{idx}...")
         current_table = maftables[idx]
         idx_modes = np.where(combmodes_MAF == idx)[0]
         log_filtered = log[log['CMB'].isin(idx_modes)].copy()
         log_filtered.dropna(subset=['RPM', 'MAP', 'ADD_MAF'], inplace=True)
 
-        # Fit a 3D surface to the filtered data
+        print(f"   -> Fitting 3D surface for IDX{idx}...")
         blend_surface = _fit_surface_maf(log_filtered, mafxaxis, mafyaxis)
 
-        # Calculate the final recommended table based on confidence logic
+        print(f"   -> Calculating correction map for IDX{idx}...")
         recommended_table, final_change, changed_mask = _calculate_maf_correction(
             log_filtered, blend_surface, current_table, mafxaxis, mafyaxis, params['confidence']
         )
@@ -271,19 +196,23 @@ def MAF_tune(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars):
         xlabels = [str(x) for x in mafxaxis]
         ylabels = [str(y) for y in mafyaxis]
         results[f'IDX{idx}'] = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
-        changes[f'IDX{idx}'] = final_change
 
-        # Optionally visualize the results in 3D
         if params['show_3d_plot']:
-            _plot_3d_maf_surface(
+            print(f"   -> Plotting 3D surface for IDX{idx}...")
+            plot_3d_surface(
                 title=f"IDX{idx} MAF Correction (Changes Marked)",
-                mafxaxis=mafxaxis,
-                mafyaxis=mafyaxis,
+                xaxis=mafxaxis,
+                yaxis=mafyaxis,
                 old_map=current_table,
                 new_map=recommended_table,
                 log_data=log_filtered,
-                changed_mask=changed_mask
+                changed_mask=changed_mask,
+                x_label='Engine Speed (RPM)',
+                y_label='Manifold Absolute Pressure (MAP)',
+                z_label='Additive MAF Correction',
+                data_col_name='ADD_MAF'
             )
 
-    _display_maf_results(results, changes)
+    print(" -> Displaying final results tables...")
+    _display_maf_results(results, maftables, parent)
     return results

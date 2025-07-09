@@ -24,40 +24,13 @@ from utils import ColoredTable, plot_3d_surface
 
 # --- Helper Classes ---
 
-class ColoredTable(Table):
-    """A pandastable Table subclass that colors cells based on change value."""
-
-    def __init__(self, parent=None, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.rowselectedcolor = None  # Disable default row selection highlighting
-
-    def color_cells(self, new_array, old_array):
-        """Colors cells green for higher values, red for lower."""
-        self.resetColors()
-        if new_array.shape != self.model.df.shape or old_array.shape != self.model.df.shape:
-            return
-
-        for r in range(new_array.shape[0]):
-            for c in range(new_array.shape[1]):
-                diff = new_array[r, c] - old_array[r, c]
-                if diff > 0.1:  # Use a small threshold for PWM %
-                    self.setRowColors(rows=[r], cols=[c], clr='#90EE90')  # Light Green
-                elif diff < -0.1:
-                    self.setRowColors(rows=[r], cols=[c], clr='#FFB6C1')  # Light Red
-        self.redraw()
-
-
 # --- Helper Functions ---
 
 def _get_lpfp_parameters():
-    """Shows dialogs to get user inputs for LPFP tuning."""
+    """Returns hardcoded parameters for LPFP tuning."""
     params = {
-        'confidence': 1 - float(simpledialog.askstring("LPFP Inputs", "Confidence required to make change:",
-                                                      initialvalue="0.50")),
-        'show_3d_plot': messagebox.askyesno(
-            "3D Visualization",
-            "Would you like to visualize the results in a 3D plot?"
-        )
+        'confidence': 0.7,
+        'show_3d_plot': True
     }
     return params
 
@@ -130,21 +103,12 @@ def _fit_surface_lpfp(log_data, xaxis, yaxis):
     if log_data.empty or len(log_data) < 3:
         return np.zeros((len(yaxis), len(xaxis)))
 
-    # --- Performance/Accuracy Improvement: Aggregate data before fitting ---
-    # Instead of fitting all raw points, fit the mean of each grid cell's
-    # coordinates and value. This is fast and spatially accurate.
-    agg_data = log_data.groupby(['X', 'Y']).agg({
-        'FF_SP': 'mean',
-        'LPFP_FP_SP': 'mean',
-        'LPFP_PWM': 'mean'
-    }).reset_index()
+    points = log_data[['FF_SP', 'LPFP_FP_SP']].values
+    values = log_data['LPFP_PWM'].values
 
-    if agg_data.empty:
-        return np.zeros((len(yaxis), len(xaxis)))
-
-    # Use the mean coordinates of the points within each cell for interpolation
-    points = agg_data[['FF_SP', 'LPFP_FP_SP']].values
-    values = agg_data['LPFP_PWM'].values
+    if len(points) < 4:
+        print("LPFP Tuner Warning: Not enough valid data points in the log to create a surface. Skipping LPFP tuning.")
+        return None  # Return None to signal that no surface could be created.
 
     grid_x, grid_y = np.meshgrid(xaxis, yaxis)
 
@@ -189,72 +153,9 @@ def _calculate_lpfp_correction(log_data, blend_surface, old_table, xaxis, yaxis,
     recommended_table = np.round(new_table, 2)
     return recommended_table, changed_mask
 
-
-def _plot_3d_lpfp_surface(title, xaxis, yaxis, old_map, new_map, log_data, changed_mask):
-    """
-    Creates an interactive 3D plot to visualize and compare LPFP surfaces.
-    The raw data is aggregated by cell and shown as mean points with std dev error bars
-    for improved performance and clarity.
-    """
-    if log_data.empty:
-        return
-
-    fig = plt.figure(figsize=(15, 10))
-    ax = fig.add_subplot(111, projection='3d')
-    X, Y = np.meshgrid(xaxis, yaxis)
-
-    # --- Data Aggregation for Performance ---
-    # Group data by cell to calculate mean and std dev for plotting
-    agg_data = log_data.groupby(['X', 'Y'])['LPFP_PWM'].agg(['mean', 'std']).reset_index().fillna(0)
-
-    # Plot aggregated data points and their error bars
-    for _, row in agg_data.iterrows():
-        x_idx, y_idx = int(row['X']), int(row['Y'])
-        if x_idx < len(xaxis) and y_idx < len(yaxis):
-            x_coord = xaxis[x_idx]
-            y_coord = yaxis[y_idx]
-            mean_val = row['mean']
-            std_val = row['std']
-
-            # Plot the mean point
-            ax.scatter(x_coord, y_coord, mean_val, c='red', marker='o', s=20)
-            # Plot the vertical error bar for standard deviation
-            ax.plot([x_coord, x_coord], [y_coord, y_coord], [mean_val - std_val, mean_val + std_val],
-                    marker="_", color='red', alpha=0.8)
-
-    # --- Original Plotting Logic (Surfaces and Markers) ---
-    ax.plot_wireframe(X, Y, old_map, color='gray', alpha=0.7, label='Original Map')
-    ax.plot_surface(X, Y, new_map, cmap='viridis', alpha=0.6, label='Recommended Map')
-
-    changed_y_indices, changed_x_indices = np.where(changed_mask)
-    if changed_y_indices.size > 0:
-        x_coords = xaxis[changed_x_indices]
-        y_coords = yaxis[changed_y_indices]
-        z_coords = new_map[changed_y_indices, changed_x_indices] + 0.5  # Z-offset for visibility
-        ax.scatter(x_coords, y_coords, z_coords, c='magenta', marker='X', s=60, label='Changed Cells',
-                   depthshade=False)
-
-    ax.set_title(title, fontsize=16)
-    ax.set_xlabel('Fuel Flow SP (Calculated per minute)', fontsize=12)
-    ax.set_ylabel('LPFP Fuel Pressure SP (LPFP_FP_SP)', fontsize=12)
-    ax.set_zlabel('LPFP Duty Cycle (%)', fontsize=12)
-    ax.invert_yaxis()
-
-    # --- Updated Legend ---
-    legend_elements = [
-        Line2D([0], [0], color='gray', lw=2, label='Original Map'),
-        Patch(facecolor=plt.cm.viridis(0.5), edgecolor='k', label='Recommended Map'),
-        Line2D([0], [0], marker='o', color='w', label='Mean Log Data', markerfacecolor='r', markersize=8),
-        Line2D([0], [0], marker='_', color='r', label='Std. Dev. of Log Data', markersize=8, markeredgewidth=2),
-        Line2D([0], [0], marker='X', color='w', label='Changed Cells', markerfacecolor='magenta', markersize=10)
-    ]
-    ax.legend(handles=legend_elements, loc='upper left')
-    plt.show(block=True)
-
-
-def _display_lpfp_results(result_df, old_array):
+def _display_lpfp_results(result_df, old_array, parent):
     """Creates a Toplevel window to display the LPFP table."""
-    window = Toplevel()
+    window = Toplevel(parent)
     window.title("LPFP PWM Table Recommendation")
     window.geometry("800x600")
 
@@ -265,6 +166,7 @@ def _display_lpfp_results(result_df, old_array):
     table_frame = Frame(frame)
     table_frame.pack(fill='both', expand=True)
 
+    # This now uses the imported ColoredTable class
     pt = ColoredTable(table_frame, dataframe=result_df, showtoolbar=True, showstatusbar=True)
     pt.editable = False
     pt.show()
@@ -273,40 +175,56 @@ def _display_lpfp_results(result_df, old_array):
 
 # --- Main Function ---
 
-def LPFP_tune(log, xaxis, yaxis, old_table, logvars):
+def LPFP_tune(log, xaxis, yaxis, old_table, logvars, parent):
     """Main orchestrator for the LPFP tuning process."""
+    print(" -> Initializing LPFP analysis...")
     params = _get_lpfp_parameters()
+
+    print(" -> Preparing LPFP data from logs...")
     log = _prepare_lpfp_data(log, logvars)
     if log.empty:
         messagebox.showinfo("LPFP Tune", "No valid LPFP data found in logs. Skipping tune.")
         return None
 
+    print(" -> Creating data bins from LPFP axes...")
     log = _create_bins(log, xaxis, yaxis)
 
+
+    print(" -> Calculating correction map...")
     # Fit a 3D surface to the filtered data
     blend_surface = _fit_surface_lpfp(log, xaxis, yaxis)
+
+    if blend_surface is None:
+        return None
 
     # Calculate the final recommended table based on confidence logic
     recommended_table, changed_mask = _calculate_lpfp_correction(
         log, blend_surface, old_table, xaxis, yaxis, params['confidence']
     )
 
-    # Optionally visualize the results in 3D
+    # --- REFACTORED: Call the generic 3D plot function from utils.py ---
     if params['show_3d_plot']:
-        _plot_3d_lpfp_surface(
+        print(" -> Plotting 3D surfaces for comparison...")
+        plot_3d_surface(
             title="LPFP PWM Correction (Changes Marked)",
             xaxis=xaxis,
             yaxis=yaxis,
             old_map=old_table,
             new_map=recommended_table,
             log_data=log,
-            changed_mask=changed_mask
+            changed_mask=changed_mask,
+            x_label='Fuel Flow SP (Calculated per minute)',
+            y_label='LPFP Fuel Pressure SP (LPFP_FP_SP)',
+            z_label='LPFP Duty Cycle (%)',
+            data_col_name='LPFP_PWM'
         )
 
+    print(" -> Preparing final results as DataFrames...")
     # Prepare and display results
     xlabels = [str(x) for x in xaxis]
     ylabels = [str(y) for y in yaxis]
     result_df = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
 
-    _display_lpfp_results(result_df, old_table)
+    print(" -> Displaying final results table...")
+    _display_lpfp_results(result_df, old_table, parent)
     return result_df
