@@ -48,7 +48,6 @@ def _prepare_knock_data(log):
     outlier_scores = np.nan_to_num(outlier_scores)
     rows_with_outlier = np.where(np.any(outlier_scores > 0, axis=1))[0]
 
-    # --- FIX: Initialize the 'singlecyl' column with a default value of 0 ---
     # This ensures the column always exists.
     log['singlecyl'] = 0
 
@@ -141,9 +140,6 @@ def _calculate_knock_correction(log, igxaxis, igyaxis, params):
                     confidence_weight = min(count, max_count_for_full_advance) / max_count_for_full_advance
                     advance_amount = params['max_adv'] * confidence_weight
 
-                    # CRITICAL FIX: The final correction is the observed average knock value
-                    # PLUS the calculated advance. This correctly offsets any background
-                    # retard before adding timing, preventing over-advancing.
                     correction_map[j, i] = mean_cell_knock + advance_amount
 
     correction_map = np.nan_to_num(correction_map)
@@ -214,7 +210,6 @@ def _display_knock_results(result_df, old_map_array, parent):
     table = ColoredTable(frame, dataframe=result_df, showtoolbar=True, showstatusbar=True)
     table.editable = False
     table.show()
-    # --- FIX: Pass the new and old maps to color_cells for correct comparison ---
     table.color_cells(result_df.to_numpy(), old_map_array)
 
 
@@ -265,7 +260,6 @@ def KNK(log, igxaxis, igyaxis, IGNmaps, max_adv, map_num, parent):
     result_df = pd.DataFrame(recommended_map, columns=xlabels, index=ylabels)
 
     # 9. Display the final table with colored cells indicating changes.
-    # --- FIX: Pass the result DataFrame and the original base map ---
     _display_knock_results(result_df, base_ignition_map, parent)
 
     return result_df

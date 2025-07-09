@@ -210,7 +210,6 @@ def load_data_files():
 
     # Concatenate all selected log files into a single DataFrame.
     try:
-        # FIX: Specify 'latin1' encoding to handle non-UTF-8 characters in log files.
         log_list = [pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in log_paths]
         log_df = pd.concat(log_list, ignore_index=True)
     except Exception as e:
@@ -390,10 +389,6 @@ def main():
         # Specify 'latin1' encoding to handle non-UTF-8 characters.
         map_definitions = pd.read_csv(MAP_DEFINITIONS_CSV_PATH, encoding='latin1')
 
-        # --- FIX: Add header=None ---
-        # This tells pandas to treat all rows in variables.csv as data,
-        # preventing the first row from being misinterpreted as a header and
-        # subsequently dropped when the file is saved.
         logvars_df = pd.read_csv(VARIABLES_CSV_PATH, encoding='latin1', header=None)
         print(f"[OK] Loaded '{MAP_DEFINITIONS_CSV_PATH}' and '{VARIABLES_CSV_PATH}'.")
 
@@ -476,17 +471,12 @@ def main():
     if settings['WGtune']:
         print("\n[MODULE] Running Wastegate (WG) Tuner...")
         try:
-            # --- FIX: Conditionally load temp compensation maps only for SWG logic ---
-            # This prevents a KeyError if the maps are not defined for standard WG tuning.
             temp_comp_map = None
             temp_comp_axis = None
             if settings['WGlogic']:
                 # Only attempt to access these maps if SWG logic is enabled.
                 temp_comp_map = all_maps['tempcomp']
                 temp_comp_axis = all_maps['tempcompaxis']
-        except Exception as e:
-            print(f"[ERROR] WG Tuner failed: {e}")
-            # --- END FIX ---
 
             Res_WG1, Res_WG0 = WG.WG_tune(
                 log_df,
@@ -567,7 +557,6 @@ def main():
             if not (0 <= knk_map_num <= 6):
                 raise ValueError("SP Map Number must be between 0 and 6.")
 
-            # --- FIX: Pass the validated settings to the KNK function ---
             Res_KNK = KNK.KNK(
                 log_df,
                 all_maps['igxaxis'],

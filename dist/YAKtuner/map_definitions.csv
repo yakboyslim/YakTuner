@@ -1,0 +1,11 @@
+variable_name,description,address_S50,address_A05,address_V30,rows,cols,offset,res,prec
+tempcomp,Temp Comp Table,0x27D866,0x2B0866,0x13D866,1,6,32768,16384,uint16
+tempcompaxis,Temp Comp Axis,0x27D860,0x2B0860,0x13D860,1,6,64,1.33,uint8
+igmap0,Ignition SP Map 1,0x27CF1A,0x2AFE7A,0x13CF1A,16,16,95,2.666666667,uint8
+igmap1,Ignition SP Map 2,0x27D01A,0x2AFF9A,0x13D01A,16,16,95,2.666666667,uint8
+igmap2,Ignition SP Map 3,0x27D11A,0x2B00BA,0x13D11A,16,16,95,2.666666667,uint8
+igmap3,Ignition SP Map 4,0x27D21A,0x2B01DA,0x13D21A,16,16,95,2.666666667,uint8
+igmap4,Ignition SP Map 5,0x27D31A,0x2B02FA,0x13D31A,16,16,95,2.666666667,uint8
+igmap5,Ignition SP Flex Map,0x27F2D0,0x200000,0x200000,16,16,95,2.666666667,uint8
+swgpid0_X,WG X-Axis (EFF),0x2196FC,0x23D092,0x212E28,1,16,0,1,uint16
+swgpid0_Y,WG Y-Axis (IFF),0x21974A,0x23D0E0,0x212E76,1,10,0,12.06017667,uint16

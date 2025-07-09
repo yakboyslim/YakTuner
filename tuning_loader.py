@@ -61,14 +61,9 @@ def _read_data_from_xdf_definitions(xdf_definitions, binary_file_path):
                     reshaped_data = raw_data.reshape((rows, cols), order='F')
                     physical_data = _apply_equation(reshaped_data, definition['equation'])
 
-                    # --- FIX ---
-                    # If the definition from the parser indicates this is an axis,
-                    # flatten the array to 1D. This ensures that functions like len()
-                    # work as expected and that it can be used directly as labels
-                    # for DataFrames or plots, resolving the shape mismatch error.
+
                     if definition.get('is_axis', False):
                         physical_data = physical_data.flatten()
-                    # --- END FIX ---
 
                     processed_maps[name] = physical_data
                     print(f"  [XDF] -> Successfully read and processed '{name}'.")
