@@ -343,6 +343,9 @@ if st.button("🐞 Test Error Reporter"):
             submit_button = st.form_submit_button("Submit Error Report")
 
             if submit_button:
+                # ADD THIS LINE
+                print("Submit button clicked, calling backend function...", flush=True)
+
                 with st.spinner("Sending report..."):
                     # Capture both the success boolean and the message
                     success, message = send_to_google_sheets(traceback_str, user_description, user_contact)
