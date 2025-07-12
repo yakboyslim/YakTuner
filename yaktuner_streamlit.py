@@ -636,6 +636,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                 st.write(f"#### Recommended {table_key.upper()} Table")
                 st.dataframe(styled_lpfp_table)
 
+        makeerror=1/0
+
     except Exception as e:
         # The st.status context manager automatically handles the error state.
         # We now show the error reporting form outside the status block.
