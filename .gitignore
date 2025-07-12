@@ -1,2 +1,8 @@
 
 /build
+/dist/YAKtuner/_internal
+/__pycache__
+/__pycache__
+/__pycache__
+/__pycache__
+*.pyc
