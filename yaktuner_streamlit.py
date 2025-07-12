@@ -167,7 +167,7 @@ def map_log_variables_streamlit(log_df, varconv_df):
 
     return None
 
-
+@st.cache_resource(show_spinner="Loading tune files (XDF, BIN)...")
 def load_all_maps_streamlit(bin_file, xdf_file, firmware_setting):
     """Loads all ECU maps from the uploaded binary and XDF files."""
     st.info("Loading tune data from binary file...")
