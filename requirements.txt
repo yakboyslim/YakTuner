@@ -4,3 +4,4 @@ numpy
 matplotlib
 scipy
 asteval
+gspread
