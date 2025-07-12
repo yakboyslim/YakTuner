@@ -330,6 +330,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
     all_maps_data = {} # To store map data for result display
 
     try:
+        
+        makeerror = 1/0
         # --- Main Analysis Pipeline ---
         with st.status("Starting YAKtuner analysis...", expanded=True) as status:
             # --- Phase 1: Interactive Variable Mapping ---
@@ -635,8 +637,6 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                 styled_lpfp_table = style_changed_cells(recommended_lpfp_df, original_lpfp_df)
                 st.write(f"#### Recommended {table_key.upper()} Table")
                 st.dataframe(styled_lpfp_table)
-
-        makeerror=1/0
 
     except Exception as e:
         # The st.status context manager automatically handles the error state.
