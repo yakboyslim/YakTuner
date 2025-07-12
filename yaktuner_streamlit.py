@@ -316,6 +316,41 @@ if st.button("🚀 Run YAKtuner Analysis", type="primary", use_container_width=T
         if key in st.session_state:
             del st.session_state[key]
 
+if st.button("🐞 Test Error Reporter"):
+    st.info("Intentionally triggering an error to test the reporting form...")
+    try:
+        # This will now reliably cause an exception
+        x = 1 / 0
+    except Exception as e:
+        st.error(f"An unexpected error occurred during the analysis: {e}")
+        st.write("You can help improve YAKtuner by sending this error report to the developer.")
+        traceback_str = traceback.format_exc()
+
+        with st.form(key="error_report_form"):
+            st.write("**An unexpected error occurred.** You can help by sending this report.")
+            user_description = st.text_area(
+                "Optional: Please describe what you were doing when the error occurred."
+            )
+            user_contact = st.text_input(
+                "Optional: Email or username for follow-up questions."
+            )
+            st.text_area(
+                "Technical Error Details (for submission)",
+                value=traceback_str,
+                height=200,
+                disabled=True
+            )
+            submit_button = st.form_submit_button("Submit Error Report")
+
+            if submit_button:
+                with st.spinner("Sending report..."):
+                    success = send_to_google_sheets(traceback_str, user_description, user_contact)
+                    if success:
+                        st.success("Thank you! Your error report has been sent.")
+                    else:
+                        st.error(
+                            "Sorry, the report could not be sent. Please copy the details below and report it manually.")
+
 if 'run_analysis' in st.session_state and st.session_state.run_analysis:
     required_files = {"BIN file": uploaded_bin_file, "Log file(s)": uploaded_log_files}
     missing_files = [name for name, file in required_files.items() if not file]
@@ -330,8 +365,6 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
     all_maps_data = {} # To store map data for result display
 
     try:
-        
-        makeerror = 1/0
         # --- Main Analysis Pipeline ---
         with st.status("Starting YAKtuner analysis...", expanded=True) as status:
             # --- Phase 1: Interactive Variable Mapping ---
