@@ -191,6 +191,20 @@ def run_wg_analysis(log_df, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, WGlogic, 
     print(" -> Initializing WG analysis...")
     # Parameters are now hardcoded here, but could be passed in from the UI.
     params = {'fudge': 0.71, 'minboost': 0}
+    temp_comp_results = None
+    original_intercept = 0.0
+    _slope = 0.0
+
+    if WGlogic and tempcomp is not None and tempcompaxis is not None:
+        try:
+            # Check if the arrays have enough points to fit a line
+            if len(tempcomp) > 1 and len(tempcompaxis) > 1:
+                _slope, original_intercept = np.polyfit(tempcompaxis, tempcomp, 1)
+                print(f" -> Original Temp Comp Slope: {_slope}, Intercept: {original_intercept}")
+            else:
+                warnings.append("Not enough data points in tempcomp/tempcompaxis to calculate slope.")
+        except (np.linalg.LinAlgError, TypeError) as e:
+            warnings.append(f"Could not calculate temp comp slope due to an error: {e}")
 
     print(" -> Preparing and filtering log data...")
     processed_log, warnings = _process_and_filter_log_data(
@@ -231,17 +245,19 @@ def run_wg_analysis(log_df, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, WGlogic, 
     # NOTE: 3D plotting logic is removed from here. It should be handled in the
     # Streamlit script if desired, using a refactored `plot_3d_surface` function.
 
-    print(" -> Preparing temperature compensation results...")
     temp_comp_results_df = None
-    if avg_coef is not None:
-        _slope, original_intercept = np.polyfit(tempcompaxis, tempcomp, 1)
-        new_tempcomp = (avg_coef * tempcompaxis) + original_intercept
-        temp_df = pd.DataFrame({
-            'Temperature': tempcompaxis,
-            'Original Comp': tempcomp,
-            'Recommended Comp': new_tempcomp
-        })
-        temp_comp_results_df = temp_df.set_index('Temperature').T.round(4)
+
+    if WGlogic and tempcomp is not None and tempcompaxis is not None:
+        print(" -> Preparing temperature compensation results...")
+        if avg_coef is not None:
+            _slope, original_intercept = np.polyfit(tempcompaxis, tempcomp, 1)
+            new_tempcomp = (avg_coef * tempcompaxis) + original_intercept
+            temp_df = pd.DataFrame({
+                'Temperature': tempcompaxis,
+                'Original Comp': tempcomp,
+                'Recommended Comp': new_tempcomp
+            })
+            temp_comp_results_df = temp_df.set_index('Temperature').T.round(4)
 
     print(" -> Preparing final results as DataFrames...")
     exhlabels = [str(x) for x in wgxaxis]

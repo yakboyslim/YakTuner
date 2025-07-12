@@ -61,26 +61,47 @@ def _create_bins(log, xaxis, yaxis):
     log['Y'] = pd.cut(log['LPFP_FP_SP'], bins=yedges, labels=False)
     return log
 
-def _fit_surface_lpfp(log_data, xaxis, yaxis):
-    """Fits a 3D surface to the LPFP PWM data using griddata."""
+def _fit_surface_lpfp(log_data, xaxis, yaxis, max_interp_points=5000):
+    """
+    Fits a 3D surface to the LPFP PWM data using griddata.
+
+    To improve performance on large logs, this function will take a random
+    sample of the data if the number of points exceeds `max_interp_points`.
+    This is much faster and preserves the data's distribution better than aggregation.
+    """
     if log_data.empty or len(log_data) < 3:
         return np.zeros((len(yaxis), len(xaxis)))
 
-    points = log_data[['FF_SP', 'LPFP_FP_SP']].values
-    values = log_data['LPFP_PWM'].values
+    # --- START: Performance Optimization using Subsampling ---
+    if len(log_data) > max_interp_points:
+        # If the dataset is large, take a random sample to speed up interpolation.
+        # Using a fixed random_state ensures that the sampling is repeatable
+        # for the same input data, making the tuning process deterministic.
+        interp_data = log_data.sample(n=max_interp_points, random_state=42)
+    else:
+        # If the dataset is small enough, use all of it.
+        interp_data = log_data
+    # --- END: Performance Optimization ---
+
+    # Use the (potentially smaller) interp_data set for all interpolation steps
+    points = interp_data[['FF_SP', 'LPFP_FP_SP']].values
+    values = interp_data['LPFP_PWM'].values
 
     if len(points) < 4:
-        # This condition is now handled by the main orchestrator
+        # This condition is handled by the main orchestrator, but serves as a safeguard.
         return None
 
     grid_x, grid_y = np.meshgrid(xaxis, yaxis)
+
+    # Perform the primary linear interpolation
     fitted_surface = interpolate.griddata(points, values, (grid_x, grid_y), method='linear')
 
+    # Fill any remaining NaN values (outside the convex hull of the data)
     nan_mask = np.isnan(fitted_surface)
     if np.any(nan_mask):
-        if len(points) > 0:
-            nearest_fill = interpolate.griddata(points, values, (grid_x[nan_mask], grid_y[nan_mask]), method='nearest')
-            fitted_surface[nan_mask] = nearest_fill
+        # Use the same subsampled points for the 'nearest' fill
+        nearest_fill = interpolate.griddata(points, values, (grid_x[nan_mask], grid_y[nan_mask]), method='nearest')
+        fitted_surface[nan_mask] = nearest_fill
 
     return np.nan_to_num(fitted_surface)
 
@@ -132,7 +153,7 @@ def run_lpfp_analysis(log, xaxis, yaxis, old_table, logvars):
     print(" -> Creating data bins from LPFP axes...")
     log_binned = _create_bins(processed_log, xaxis, yaxis)
 
-    print(" -> Calculating correction map...")
+    print(" -> Fitting 3D surface to LPFP data...")
     blend_surface = _fit_surface_lpfp(log_binned, xaxis, yaxis)
 
     if blend_surface is None:
@@ -142,8 +163,6 @@ def run_lpfp_analysis(log, xaxis, yaxis, old_table, logvars):
     recommended_table, changed_mask = _calculate_lpfp_correction(
         log_binned, blend_surface, old_table, xaxis, yaxis, params['confidence']
     )
-
-    # 3D plotting and table display are now handled by the UI (Streamlit).
 
     print(" -> Preparing final results as DataFrame...")
     xlabels = [str(x) for x in xaxis]
