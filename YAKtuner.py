@@ -388,7 +388,6 @@ def main():
     try:
         # Specify 'latin1' encoding to handle non-UTF-8 characters.
         map_definitions = pd.read_csv(MAP_DEFINITIONS_CSV_PATH, encoding='latin1')
-
         logvars_df = pd.read_csv(VARIABLES_CSV_PATH, encoding='latin1', header=None)
         print(f"[OK] Loaded '{MAP_DEFINITIONS_CSV_PATH}' and '{VARIABLES_CSV_PATH}'.")
 
