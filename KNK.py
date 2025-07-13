@@ -12,7 +12,6 @@ from scipy.stats import norm
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
-import streamlit as st
 
 # Set a non-interactive backend for matplotlib
 matplotlib.use('Agg')
@@ -139,7 +138,6 @@ def create_knock_scatter_plot(log, igxaxis, igyaxis):
     return fig
 
 # --- Main Orchestrator Function ---
-@st.cache_data(show_spinner="Running KNK analysis...")
 def run_knk_analysis(log, igxaxis, igyaxis, IGNmaps, max_adv, map_num):
     """
     Main orchestrator for the KNK tuning process. A pure computational function.

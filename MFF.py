@@ -9,7 +9,6 @@ adjustments to the five primary MFF tables (IDX0-IDX4).
 import numpy as np
 import pandas as pd
 from scipy import stats, interpolate
-import streamlit as st
 
 # --- Helper Functions ---
 
@@ -123,7 +122,6 @@ def _calculate_mff_correction(log_data, blend_surface, old_table, mffxaxis, mffy
     return recommended_table
 
 # --- Main Orchestrator Function ---
-@st.cache_data(show_spinner="Running MFF analysis...")
 def run_mff_analysis(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars):
     """
     Main orchestrator for the MFF tuning process. A pure computational function.

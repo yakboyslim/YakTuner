@@ -305,6 +305,25 @@ def style_changed_cells(new_df: pd.DataFrame, old_df: pd.DataFrame):
     except (ValueError, TypeError):
         return new_df.style
 
+@st.cache_data(show_spinner="Running WG analysis...")
+def cached_run_wg_analysis(*args, **kwargs):
+    return run_wg_analysis(*args, **kwargs)
+
+@st.cache_data(show_spinner="Running MAF analysis...")
+def cached_run_maf_analysis(*args, **kwargs):
+    return run_maf_analysis(*args, **kwargs)
+
+@st.cache_data(show_spinner="Running MFF analysis...")
+def cached_run_mff_analysis(*args, **kwargs):
+    return run_mff_analysis(*args, **kwargs)
+
+@st.cache_data(show_spinner="Running KNK analysis...")
+def cached_run_knk_analysis(*args, **kwargs):
+    return run_knk_analysis(*args, **kwargs)
+
+@st.cache_data(show_spinner="Running LPFP analysis...")
+def cached_run_lpfp_analysis(*args, **kwargs):
+    return run_lpfp_analysis(*args, **kwargs)
 
 # --- 3. Run Button and Logic ---
 st.divider()
@@ -442,7 +461,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                             if missing: raise KeyError(f"A required map is missing: {', '.join(missing)}")
                             all_maps_data['wg'] = module_maps # Store for later
 
-                            wg_results = run_wg_analysis(
+                            wg_results = cached_run_wg_analysis(
                                 log_df=mapped_log_df, wgxaxis=module_maps[x_axis_key], wgyaxis=module_maps[y_axis_key],
                                 oldWG0=module_maps['wgpid0'], oldWG1=module_maps['wgpid1'],
                                 logvars=mapped_log_df.columns.tolist(),
@@ -467,7 +486,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                             if missing: raise KeyError(f"A required map is missing: {', '.join(missing)}")
                             all_maps_data['maf'] = module_maps # Store for later
 
-                            maf_results = run_maf_analysis(
+                            maf_results = cached_run_maf_analysis(
                                 log=mapped_log_df, mafxaxis=module_maps['maftable0_X'],
                                 mafyaxis=module_maps['maftable0_Y'],
                                 maftables=[module_maps[f'maftable{i}'] for i in range(4)],
@@ -492,7 +511,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                             if missing: raise KeyError(f"A required map is missing: {', '.join(missing)}")
                             all_maps_data['mff'] = module_maps # Store for later
 
-                            mff_results = run_mff_analysis(
+                            mff_results = cached_run_mff_analysis(
                                 log=mapped_log_df, mffxaxis=module_maps['MFFtable0_X'],
                                 mffyaxis=module_maps['MFFtable0_Y'],
                                 mfftables=[module_maps[f'MFFtable{i}'] for i in range(5)],
@@ -517,7 +536,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                             if missing: raise KeyError(f"A required map for KNK tuning is missing: {', '.join(missing)}")
                             all_maps_data['knk'] = module_maps # Store for later
 
-                            knk_results = run_knk_analysis(
+                            knk_results = cached_run_knk_analysis(
                                 log=mapped_log_df, igxaxis=module_maps['igxaxis'],
                                 igyaxis=module_maps['igyaxis'],
                                 IGNmaps=[module_maps.get(f'igmap{i}') for i in range(6)], max_adv=max_adv,
@@ -545,7 +564,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                             all_maps_data['lpfp'] = module_maps  # Store for later
                             all_maps_data['lpfp']['table_key'] = table_key  # Store the dynamic key
 
-                            lpfp_results = run_lpfp_analysis(
+                            lpfp_results = cached_run_lpfp_analysis(
                                 log=mapped_log_df, xaxis=module_maps['lpfppwm_X'],
                                 yaxis=module_maps['lpfppwm_Y'],
                                 old_table=module_maps[table_key], logvars=mapped_log_df.columns.tolist()

@@ -10,7 +10,6 @@ adjustments to the four primary MAF correction tables (IDX0-IDX3).
 import numpy as np
 import pandas as pd
 from scipy import stats, interpolate
-import streamlit as st
 
 # --- Helper Functions ---
 
@@ -116,7 +115,6 @@ def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafy
     return recommended_table
 
 # --- Main Orchestrator Function ---
-@st.cache_data(show_spinner="Running MAF analysis...")
 def run_maf_analysis(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars):
     """
     Main orchestrator for the MAF tuning process. A pure computational function.

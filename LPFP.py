@@ -10,7 +10,6 @@ recommend adjustments to the LPFP PWM control tables.
 import numpy as np
 import pandas as pd
 from scipy import stats, interpolate
-import streamlit as st
 
 # --- Helper Functions ---
 
@@ -128,7 +127,6 @@ def _calculate_lpfp_correction(log_data, blend_surface, old_table, xaxis, yaxis,
     return recommended_table, changed_mask
 
 # --- Main Orchestrator Function ---
-@st.cache_data(show_spinner="Running LPFP analysis...")
 def run_lpfp_analysis(log, xaxis, yaxis, old_table, logvars):
     """
     Main orchestrator for the LPFP tuning process. A pure computational function.
