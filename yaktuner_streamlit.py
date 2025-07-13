@@ -692,7 +692,3 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
         with st.expander("Click to view technical error details"):
             st.code(traceback_str, language=None)
-
-    finally:
-    # Always reset the run state
-        st.session_state.run_analysis = False
