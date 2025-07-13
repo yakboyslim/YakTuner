@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 from scipy import stats, interpolate
 import matplotlib.pyplot as plt
-import streamlit as st
 
 # --- Core Calculation and Filtering Functions ---
 
@@ -166,7 +165,6 @@ def _calculate_final_recommendations(log_data, blend, old_table, wgxaxis, wgyaxi
         return final_table
 
 # --- Main Orchestrator Function ---
-@st.cache_data(show_spinner="Running WG analysis...")
 def run_wg_analysis(log_df, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, WGlogic, tempcomp, tempcompaxis, show_scatter_plot=True):
     """
     Main orchestrator for the WG tuning process. A pure computational function.
