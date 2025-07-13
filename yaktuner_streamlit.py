@@ -702,12 +702,14 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
             if submit_button:
                 with st.spinner("Sending report..."):
-                    success = send_to_google_sheets(traceback_str, user_description, user_contact)
+                    # FIX THIS LINE: It was `success = ...`
+                    success, message = send_to_google_sheets(traceback_str, user_description, user_contact)
                     if success:
                         st.success("Thank you! Your error report has been sent.")
                     else:
-                        st.error(
-                            "Sorry, the report could not be sent. Please copy the details below and report it manually.")
+                        # AND FIX THIS LINE: Use the message variable
+                        st.error(f"Sorry, the report could not be sent. Reason: {message}")
+                        st.error("Please copy the details below and report it manually.")
 
         with st.expander("Click to view technical error details"):
             st.code(traceback_str, language=None)
