@@ -336,6 +336,11 @@ if st.button("🚀 Run YAKtuner Analysis", type="primary", use_container_width=T
             del st.session_state[key]
 
 if st.button("🐞 Test Error Reporter"):
+    # When the button is clicked, set a flag in session_state to show the form.
+    st.session_state.show_error_test_form = True
+
+# This block will now run on the initial click AND on the rerun after form submission.
+if st.session_state.get('show_error_test_form', False):
     st.info("Intentionally triggering an error to test the reporting form...")
     try:
         # This will now reliably cause an exception
@@ -345,13 +350,17 @@ if st.button("🐞 Test Error Reporter"):
         st.write("You can help improve YAKtuner by sending this error report to the developer.")
         traceback_str = traceback.format_exc()
 
-        with st.form(key="error_report_form"):
+        # Use a unique key for the test form to avoid conflicts
+        with st.form(key="error_report_form_test"):
             st.write("**An unexpected error occurred.** You can help by sending this report.")
+            # Add keys to widgets inside forms for robust state handling
             user_description = st.text_area(
-                "Optional: Please describe what you were doing when the error occurred."
+                "Optional: Please describe what you were doing when the error occurred.",
+                key="test_error_desc"
             )
             user_contact = st.text_input(
-                "Optional: Email or username for follow-up questions."
+                "Optional: Email or username for follow-up questions.",
+                key="test_error_contact"
             )
             st.text_area(
                 "Technical Error Details (for submission)",
@@ -362,18 +371,17 @@ if st.button("🐞 Test Error Reporter"):
             submit_button = st.form_submit_button("Submit Error Report")
 
             if submit_button:
-                # ADD THIS LINE
-                print("Submit button clicked, calling backend function...", flush=True)
-
                 with st.spinner("Sending report..."):
-                    # Capture both the success boolean and the message
                     success, message = send_to_google_sheets(traceback_str, user_description, user_contact)
                     if success:
                         st.success("Thank you! Your error report has been sent.")
                     else:
-                        # Display the specific error message from the function
                         st.error(f"Sorry, the report could not be sent. Reason: {message}")
                         st.error("Please copy the details below and report it manually.")
+
+                # After processing, reset the flag to hide the form and rerun.
+                st.session_state.show_error_test_form = False
+                st.rerun()
 
 if 'run_analysis' in st.session_state and st.session_state.run_analysis:
     required_files = {"BIN file": uploaded_bin_file, "Log file(s)": uploaded_log_files}
