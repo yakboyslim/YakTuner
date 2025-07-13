@@ -341,7 +341,6 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
     required_files = {"BIN file": uploaded_bin_file, "Log file(s)": uploaded_log_files}
     missing_files = [name for name, file in required_files.items() if not file]
 
-    # This block is now refactored to avoid st.stop()
     if missing_files:
         st.error(f"Please upload all required files. Missing: {', '.join(missing_files)}")
         st.session_state.run_analysis = False  # Reset state and allow the script to end gracefully
@@ -659,6 +658,10 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                         st.write(f"#### Recommended {table_key.upper()} Table")
                         st.dataframe(styled_lpfp_table)
 
+                # --- ADDED ---
+                # After a successful run, reset the flag to prevent re-running on the next interaction.
+                st.session_state.run_analysis = False
+
         except Exception as e:
             st.error(f"An unexpected error occurred during the analysis: {e}")
             st.write("You can help improve YAKtuner by sending this error report to the developer.")
@@ -691,3 +694,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
             with st.expander("Click to view technical error details"):
                 st.code(traceback_str, language=None)
+
+            # --- ADDED ---
+            # After an unsuccessful run, also reset the flag.
+            st.session_state.run_analysis = False
