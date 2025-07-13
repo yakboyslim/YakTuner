@@ -1,27 +1,14 @@
+
 """
 Multiplicative Fuel Factor (MFF) Tuning Module
 
-This module analyzes engine logs to calculate and recommend adjustments to the
-five primary MFF tables (IDX0-IDX4). It processes fuel trim data
-to determine the required multiplicative fuel factor, fits a 3D surface to this
-data, and applies a confidence-based algorithm to generate new table values.
-
-The results are presented in a 2x3 grid of tables and optional interactive
-3D plots for detailed visual analysis.
+This module contains pure, non-UI functions to analyze engine logs and recommend
+adjustments to the five primary MFF tables (IDX0-IDX4).
 """
 
 import numpy as np
 import pandas as pd
 from scipy import stats, interpolate
-import tkinter as tk
-from tkinter import simpledialog, messagebox, Toplevel, Frame
-from pandastable import Table
-import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
-from matplotlib.lines import Line2D
-from utils import ColoredTable, plot_3d_surface
-
-# --- Helper Classes ---
 
 # --- Helper Functions ---
 
@@ -33,45 +20,49 @@ def _get_mff_parameters():
     }
     return params
 
-def _prepare_mff_data(log, logvars):
-    """Adds derived columns, filters log data, and warns about missing variables."""
-    if "OILTEMP" in logvars:
-        log = log[log['OILTEMP'] > 180].copy()
+def _process_and_filter_mff_data(log, logvars):
+    """
+    A pure function to prepare and filter log data for MFF tuning.
+    It returns a processed DataFrame and a list of warnings.
+    """
+    warnings = []
+    df = log.copy()
 
-    # Use .loc to ensure we are modifying the DataFrame directly, not a copy.
+    if "OILTEMP" in logvars:
+        df = df[df['OILTEMP'] > 180].copy()
+
     if 'LAM_DIF' not in logvars:
-        log.loc[:, 'LAM_DIF'] = 1/log['LAMBDA_SP'] - 1/log['LAMBDA']
-        messagebox.showwarning('Recommendation', 'Recommend logging LAM DIF. Using calculated value, but may introduce inaccuracy.')
+        df.loc[:, 'LAM_DIF'] = 1/df['LAMBDA_SP'] - 1/df['LAMBDA']
+        warnings.append('Recommend logging LAM DIF. Using calculated value, but may introduce inaccuracy.')
 
     if "FAC_MFF_ADD" in logvars:
-        log.loc[:, 'final_ltft'] = log["FAC_MFF_ADD"]
+        final_ltft = df["FAC_MFF_ADD"]
     else:
-        log.loc[:, 'final_ltft'] = log['STFT']
+        final_ltft = df['STFT'] # Note: Original code used STFT here, preserving that.
 
     if 'FAC_LAM_OUT' in logvars:
-        log.loc[:, 'final_stft'] = log['FAC_LAM_OUT']
+        final_stft = df['FAC_LAM_OUT']
     else:
-        log.loc[:, 'final_stft'] = log['STFT']
+        final_stft = df['STFT']
 
-    # --- Core Calculation Change: Create a MULTIPLICATIVE factor ---
-    additive_correction = (log['final_stft'] + log['final_ltft'])/100 - log['LAM_DIF']
-    log.loc[:, 'MFF_FACTOR'] = 1.0 + additive_correction
+    # --- Core Calculation: Create a MULTIPLICATIVE factor ---
+    additive_correction = (final_stft + final_ltft)/100 - df['LAM_DIF']
+    df.loc[:, 'MFF_FACTOR'] = 1.0 + additive_correction
 
     if 'MFF_COR' in logvars:
-        log.loc[:, 'MFF_FACTOR'] = additive_correction + log['MFF_COR']
+        # Assuming MFF_COR is also an additive correction to the factor
+        df.loc[:, 'MFF_FACTOR'] = additive_correction + log['MFF_COR']
     else:
-        messagebox.showwarning('Recommendation', 'Recommend logging MFF_COR for increased accuracy.')
+        warnings.append('Recommend logging MFF_COR for increased accuracy.')
 
-    log = log[log['state_lam'] == 1].copy()
-    log = log.drop(columns=['final_ltft', 'final_stft'], errors='ignore')
-    return log
+    df = df[df['state_lam'] == 1].copy()
+    return df, warnings
 
 def _create_bins(log, mffxaxis, mffyaxis):
     """Discretizes log data into bins based on MFF map axes."""
     xedges = [0] + [(mffxaxis[i] + mffxaxis[i + 1]) / 2 for i in range(len(mffxaxis) - 1)] + [np.inf]
     yedges = [0] + [(mffyaxis[i] + mffyaxis[i + 1]) / 2 for i in range(len(mffyaxis) - 1)] + [np.inf]
 
-    # Also, use .loc to assign new columns safely and avoid warnings.
     log.loc[:, 'X'] = pd.cut(log['RPM'], bins=xedges, labels=False, duplicates='drop')
     log.loc[:, 'Y'] = pd.cut(log['MAF'], bins=yedges, labels=False, duplicates='drop') # Use Airmass (MAF) for Y-axis
     return log
@@ -97,7 +88,6 @@ def _fit_surface_mff(log_data, mffxaxis, mffyaxis):
 def _calculate_mff_correction(log_data, blend_surface, old_table, mffxaxis, mffyaxis, confidence):
     """Applies confidence interval logic to determine the final correction table."""
     new_table = old_table.copy()
-    changed_mask = np.zeros_like(old_table, dtype=bool)
     max_count = 100.0
     interp_factor = 0.25
 
@@ -126,50 +116,37 @@ def _calculate_mff_correction(log_data, blend_surface, old_table, mffxaxis, mffy
                     weight = min(count, max_count) / max_count
                     change_amount = (new_val - current_val) * weight
                     new_table[j, i] = current_val + change_amount
-                    changed_mask[j, i] = True
 
     # Quantize the final table to a common ECU resolution for multiplicative factors (1/1024)
     recommended_table = np.round(new_table * 1024) / 1024
-    # Recalculate the final change amount after quantization
-    final_change = recommended_table - old_table
-    return recommended_table, final_change, changed_mask
+    return recommended_table
 
-def _display_mff_results(results, mfftables, parent):
-    """Creates a Toplevel window with a 2x3 grid to display the 5 MFF tables."""
-    window = Toplevel(parent)
-    window.title("MFF Table Recommendations")
+# --- Main Orchestrator Function ---
+def run_mff_analysis(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars):
+    """
+    Main orchestrator for the MFF tuning process. A pure computational function.
 
-    # Use a 2x3 grid for 5 tables
-    frames = [Frame(window) for _ in range(5)]
-    grid_positions = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1)]
+    Args:
+        log (pd.DataFrame): The mapped log data.
+        mffxaxis, mffyaxis (np.ndarray): The axes for the MFF tables.
+        mfftables (list[np.ndarray]): A list of the five original MFF tables.
+        combmodes_MFF (np.ndarray): The combination modes map.
+        logvars (list): A list of available variable names in the log.
 
-    for i, frame in enumerate(frames):
-        row, col = grid_positions[i]
-        window.grid_rowconfigure(row, weight=1)
-        window.grid_columnconfigure(col, weight=1)
-        frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
-
-        tk.Label(frame, text=f"IDX{i} Correction Table", font=("Arial", 10, "bold")).pack(pady=5)
-        table_frame = Frame(frame)
-        table_frame.pack(fill='both', expand=True)
-
-        pt = ColoredTable(table_frame, dataframe=results[f"IDX{i}"], showtoolbar=True, showstatusbar=True)
-        pt.editable = False
-        pt.show()
-        pt.color_cells(results[f"IDX{i}"].to_numpy(), mfftables[i])
-
-# --- Main Function ---
-
-def MFF_tune(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars, parent):
-    """Main orchestrator for the MFF tuning process."""
+    Returns:
+        dict: A dictionary containing all results.
+    """
     print(" -> Initializing MFF analysis...")
-    params = _get_mff_parameters()
+    params = {'confidence': 0.7} # Hardcoded parameter
 
     print(" -> Preparing MFF data from logs...")
-    log = _prepare_mff_data(log, logvars)
+    processed_log, warnings = _process_and_filter_mff_data(log, logvars)
+
+    if processed_log.empty:
+        return {'status': 'Failure', 'warnings': warnings, 'results_mff': None}
 
     print(" -> Creating data bins from MFF axes...")
-    log = _create_bins(log, mffxaxis, mffyaxis)
+    log_binned = _create_bins(processed_log, mffxaxis, mffyaxis)
 
     results = {}
     # Loop through all 5 MFF tables
@@ -177,38 +154,27 @@ def MFF_tune(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars, parent)
         print(f" -> Processing MFF Table IDX{idx}...")
         current_table = mfftables[idx]
         idx_modes = np.where(combmodes_MFF == idx)[0]
-        log_filtered = log[log['CMB'].isin(idx_modes)].copy()
+        log_filtered = log_binned[log_binned['CMB'].isin(idx_modes)].copy()
         log_filtered.dropna(subset=['RPM', 'MAF', 'MFF_FACTOR'], inplace=True)
 
         print(f"   -> Fitting 3D surface for IDX{idx}...")
         blend_surface = _fit_surface_mff(log_filtered, mffxaxis, mffyaxis)
 
         print(f"   -> Calculating correction map for IDX{idx}...")
-        recommended_table, final_change, changed_mask = _calculate_mff_correction(
+        recommended_table = _calculate_mff_correction(
             log_filtered, blend_surface, current_table, mffxaxis, mffyaxis, params['confidence']
         )
 
-        # Store results
+        # Store results as a DataFrame
         xlabels = [str(x) for x in mffxaxis]
         ylabels = [str(y) for y in mffyaxis]
         results[f'IDX{idx}'] = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
 
-        if params['show_3d_plot']:
-            print(f"   -> Plotting 3D surface for IDX{idx}...")
-            plot_3d_surface(
-                title=f"IDX{idx} MFF Correction (Changes Marked)",
-                xaxis=mffxaxis,
-                yaxis=mffyaxis,
-                old_map=current_table,
-                new_map=recommended_table,
-                log_data=log_filtered,
-                changed_mask=changed_mask,
-                x_label='Engine Speed (RPM)',
-                y_label='Airmass (MAF)',
-                z_label='Multiplicative Fuel Factor',
-                data_col_name='MFF_FACTOR'
-            )
+    # 3D plotting and table display are now handled by the UI (Streamlit).
 
-    print(" -> Displaying final results tables...")
-    _display_mff_results(results, mfftables, parent)
-    return results
+    print(" -> MFF analysis complete.")
+    return {
+        'status': 'Success',
+        'warnings': warnings,
+        'results_mff': results
+    }
