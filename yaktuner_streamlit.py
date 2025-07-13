@@ -81,7 +81,6 @@ with st.sidebar:
         selected_map_name = st.selectbox(
             "Ignition Map Selection", options=list(ign_map_options.keys()), key="selected_ign_map"
         )
-        )
         ign_map = ign_map_options[selected_map_name]
         max_adv = st.slider("Max Advance", 0.0, 2.0, 0.75, 0.25, key="max_adv")
 
