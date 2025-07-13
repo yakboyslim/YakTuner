@@ -65,11 +65,12 @@ with st.sidebar:
     # --- Module-Specific Settings ---
     if run_wg:
         st.subheader("WG Settings")
-        use_swg_logic = st.checkbox("Use SWG Logic")
+        use_swg_logic = st.checkbox("Use SWG Logic", key="use_swg_logic")
 
     if run_lpfp:
         st.subheader("LPFP Settings")
-        lpfp_drive = st.radio("2WD or 4WD", ('2WD', '4WD'))
+        lpfp_drive = st.radio("2WD or 4WD", ('2WD', '4WD'), key="lpfp_drive")
+
 
     if run_ign:
         st.subheader("Ignition Settings")
@@ -78,10 +79,11 @@ with st.sidebar:
             "SP Map 4": 4, "SP Map 5": 5, "SP Flex Modifier": 6
         }
         selected_map_name = st.selectbox(
-            "Ignition Map Selection", options=list(ign_map_options.keys())
+            "Ignition Map Selection", options=list(ign_map_options.keys()), key="selected_ign_map"
+        )
         )
         ign_map = ign_map_options[selected_map_name]
-        max_adv = st.slider("Max Advance", 0.0, 2.0, 0.75, 0.25)
+        max_adv = st.slider("Max Advance", 0.0, 2.0, 0.75, 0.25, key="max_adv")
 
     st.divider()
 
