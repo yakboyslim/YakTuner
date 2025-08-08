@@ -5,7 +5,6 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2a81625d-3a2f-4b79-8cf5-9164183627ab" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yaktuner_streamlit.py" beforeDir="false" afterPath="$PROJECT_DIR$/yaktuner_streamlit.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />

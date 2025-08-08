@@ -7,7 +7,7 @@ import re
 import traceback
 import sys
 import difflib
-from st_copy_to_clipboard import st_copy_to_clipboard
+from streamlit_copy_to_clipboard import st_copy_to_clipboard
 from io import BytesIO
 
 # --- Add project root to sys.path ---
