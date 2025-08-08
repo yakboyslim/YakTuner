@@ -5,9 +5,6 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2a81625d-3a2f-4b79-8cf5-9164183627ab" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/TTA_ATT.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/maps_to_parse.csv" beforeDir="false" afterPath="$PROJECT_DIR$/maps_to_parse.csv" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yaktuner_streamlit.py" beforeDir="false" afterPath="$PROJECT_DIR$/yaktuner_streamlit.py" afterDir="false" />
     </list>
@@ -210,9 +207,9 @@
       <method v="2" />
     </configuration>
     <list>
+      <item itemvalue="Python.YAKtuner" />
       <item itemvalue="Python.KNK" />
       <item itemvalue="Python.POPS" />
-      <item itemvalue="Python.YAKtuner" />
       <item itemvalue="Python.tuning_loader" />
       <item itemvalue="Python.xdf_parser" />
       <item itemvalue="Python.yaktuner_streamlit" />
