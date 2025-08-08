@@ -7,6 +7,7 @@ import re
 import traceback
 import sys
 import difflib
+from st_copy_to_clipboard import st_copy_to_clipboard
 from io import BytesIO
 
 # --- Add project root to sys.path ---
@@ -117,6 +118,30 @@ if firmware == 'Other':
 
 
 # --- Helper Functions ---
+
+def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
+    """
+    Displays a title, a styled DataFrame with its index, and a button to copy
+    the raw data (without index/header) to the clipboard.
+
+    Args:
+        title (str): The title to display above the table.
+        styled_df: The Styler object for display (e.g., with highlighted cells).
+        raw_df (pd.DataFrame): The raw, unstyled DataFrame whose values will be copied.
+    """
+    st.write(title)
+
+    # Prepare the data for the clipboard: tab-separated, no index, no header.
+    # This is the format TunerPro expects for clean pasting.
+    clipboard_text = raw_df.to_csv(sep='\t', index=False, header=False)
+
+    # Display the table with its index visible for context.
+    st.dataframe(styled_df)
+
+    # Use a unique key for the button based on the title to avoid conflicts
+    button_label = f"📋 Copy {title.strip('# ')} Data"
+    st_copy_to_clipboard(clipboard_text, button_label)
+    st.caption("Use the button above to copy data for pasting into TunerPro.")
 
 def normalize_header(header_name):
     """Normalizes a log file header for case-insensitive and unit-agnostic comparison."""
@@ -306,6 +331,37 @@ def style_changed_cells(new_df: pd.DataFrame, old_df: pd.DataFrame):
         return new_df.style.apply(lambda x: style_df, axis=None)
     except (ValueError, TypeError):
         return new_df.style
+
+
+def style_deviation_cells(new_df: pd.DataFrame, old_df: pd.DataFrame, threshold=0.05):
+    """
+    Compares two DataFrames and returns a Styler object with cells highlighted
+    if their relative deviation exceeds a threshold.
+    """
+    try:
+        new_df_c = new_df.copy().astype(float)
+        old_df_c = old_df.copy().astype(float)
+
+        # To avoid division by zero, we treat a zero in the old table as a special case.
+        # Any non-zero new value where the old was zero is a significant deviation.
+        # If both are zero, deviation is zero.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            deviation = np.abs((new_df_c - old_df_c) / old_df_c)
+
+        style_df = pd.DataFrame('', index=new_df.index, columns=new_df.columns)
+
+        # Highlight cells where deviation is > threshold.
+        # Also highlight where old was 0 and new is not, but ignore if both are 0.
+        highlight_style = 'background-color: #442B2B'  # Red for deviation
+        style_df[
+            (deviation > threshold) |
+            ((old_df_c == 0) & (new_df_c != 0))
+            ] = highlight_style
+
+        # Return the new dataframe with the calculated styles applied
+        return new_df.style.apply(lambda x: style_df, axis=None).format("{:.2f}")
+    except (ValueError, TypeError):
+        return new_df.style.format("{:.2f}")
 
 @st.cache_data(show_spinner="Running WG analysis...")
 def cached_run_wg_analysis(*args, **kwargs):
@@ -573,10 +629,9 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
                         tab1, tab2, tab3 = st.tabs(["📈 Recommended Tables", "📊 Scatter Plot", "🌡️ Temp Comp"])
                         with tab1:
-                            st.write("#### Recommended WGPID0 (VVL0)");
-                            st.dataframe(styled_vvl0)
-                            st.write("#### Recommended WGPID1 (VVL1)");
-                            st.dataframe(styled_vvl1)
+                            display_table_with_copy_button("#### Recommended WGPID0 (VVL0)", styled_vvl0, res_vvl0)
+                            st.divider()
+                            display_table_with_copy_button("#### Recommended WGPID1 (VVL1)", styled_vvl1, res_vvl1)
                         with tab2:
                             if scatter_plot:
                                 st.pyplot(scatter_plot)
@@ -584,8 +639,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                 st.info("Scatter plot was not generated.")
                         with tab3:
                             if temp_comp is not None:
-                                st.write("#### Recommended Temperature Compensation");
-                                st.dataframe(temp_comp)
+                                display_table_with_copy_button("#### Recommended Temperature Compensation",
+                                                               temp_comp.style, temp_comp)
                             else:
                                 st.info("No temperature compensation adjustments were recommended.")
 
@@ -603,8 +658,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                                            columns=[str(x) for x in module_maps['maftable0_X']])
                                 recommended_df = recommended_maf_dfs[f'IDX{i}']
                                 styled_table = style_changed_cells(recommended_df, original_df)
-                                st.write(f"#### Recommended `maftable{i}`");
-                                st.dataframe(styled_table)
+                                display_table_with_copy_button(f"#### Recommended `maftable{i}`", styled_table,
+                                                               recommended_df)
 
                 if mff_results and mff_results.get('status') == 'Success':
                     with st.expander("Multiplicative Fuel Factor (MFF) Tuning Results", expanded=True):
@@ -620,8 +675,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                                            columns=[str(x) for x in module_maps['MFFtable0_X']])
                                 recommended_df = recommended_mff_dfs[f'IDX{i}']
                                 styled_table = style_changed_cells(recommended_df, original_df)
-                                st.write(f"#### Recommended `MFFtable{i}`");
-                                st.dataframe(styled_table)
+                                display_table_with_copy_button(f"#### Recommended `MFFtable{i}`", styled_table,
+                                                               recommended_df)
 
                 if knk_results and knk_results.get('status') == 'Success':
                     with st.expander("Ignition Timing (KNK) Tuning Results", expanded=True):
@@ -632,12 +687,13 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                         module_maps = all_maps_data['knk']
                         tab1, tab2 = st.tabs(["📈 Recommended Table", "📊 Knock Scatter Plot"])
                         with tab1:
-                            st.write(f"#### Recommended Ignition Table (Correcting `{selected_map_name}`)")
                             original_df = pd.DataFrame(base_map_np,
                                                        index=[str(y) for y in module_maps['igyaxis']],
                                                        columns=[str(x) for x in module_maps['igxaxis']])
                             styled_table = style_changed_cells(recommended_knk_df, original_df)
-                            st.dataframe(styled_table)
+                            display_table_with_copy_button(
+                                f"#### Recommended Ignition Table (Correcting `{selected_map_name}`)",
+                                styled_table, recommended_knk_df)
                         with tab2:
                             if scatter_plot:
                                 st.pyplot(scatter_plot)
@@ -655,8 +711,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                                         index=[str(y) for y in module_maps['lpfppwm_Y']],
                                                         columns=[str(x) for x in module_maps['lpfppwm_X']])
                         styled_lpfp_table = style_changed_cells(recommended_lpfp_df, original_lpfp_df)
-                        st.write(f"#### Recommended {table_key.upper()} Table")
-                        st.dataframe(styled_lpfp_table)
+                        display_table_with_copy_button(f"#### Recommended {table_key.upper()} Table",
+                                                       styled_lpfp_table, recommended_lpfp_df)
 
                 # --- ADDED ---
                 # After a successful run, reset the flag to prevent re-running on the next interaction.
