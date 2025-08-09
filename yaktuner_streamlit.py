@@ -65,6 +65,18 @@ with st.sidebar:
 
     st.divider()
 
+    st.subheader("Global Settings")
+    oil_temp_unit = st.radio(
+        "Oil Temperature Unit in Log File",
+        ('F', 'C'),
+        index=0,  # Default to Fahrenheit
+        horizontal=True,
+        help="Select the unit for the 'OILTEMP' column in your log file. "
+             "If 'C' is selected, it will be converted to Fahrenheit for analysis."
+    )
+
+    st.divider()
+
     # --- Module-Specific Settings ---
     if run_wg:
         st.subheader("WG Settings")
@@ -88,6 +100,10 @@ with st.sidebar:
         max_adv = st.slider("Max Advance", 0.0, 2.0, 0.75, 0.25, key="max_adv")
 
     st.divider()
+    st.page_link("pages/2_PID_Downloads.py", label="PID Lists for Download", icon="📄")
+
+    st.divider()
+
 
     # --- Donation Link ---
     paypal_link = "https://www.paypal.com/donate/?hosted_button_id=MN43RKBR8AT6L"
@@ -418,6 +434,12 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             with st.status("Mapping log variables...", expanded=True) as mapping_status:
                 log_df = pd.concat((pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in uploaded_log_files),
                                    ignore_index=True)
+
+                if 'OILTEMP' in log_df.columns and oil_temp_unit == 'C':
+                    st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
+                    # Apply the conversion formula: F = C * 9/5 + 32
+                    log_df['OILTEMP'] = log_df['OILTEMP'] * 1.8 + 32
+                    st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
 
                 if not os.path.exists(default_vars):
                     raise FileNotFoundError(
