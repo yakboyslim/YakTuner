@@ -20,6 +20,7 @@ from LPFP import run_lpfp_analysis
 from MAF import run_maf_analysis
 from MFF import run_mff_analysis
 from KNK import run_knk_analysis
+from TTA_ATT import run_tta_att_analysis
 from tuning_loader import TuningData
 from error_reporter import send_to_google_sheets
 
@@ -49,6 +50,7 @@ with st.sidebar:
     run_mff = st.checkbox("Tune Mass Fuel Flow (MFF)", value=False, key="run_mff")
     run_ign = st.checkbox("Tune Ignition (KNK)", value=False, key="run_ign")
     run_lpfp = st.checkbox("Tune Low Pressure Pump Duty (LPFP)", value=False, key="run_lpfp")
+    run_tta_att = st.checkbox("TTA/ATT Consistency Check", value=False, key="run_tta_att")
 
     st.divider()
 
@@ -383,6 +385,10 @@ def cached_run_knk_analysis(*args, **kwargs):
 def cached_run_lpfp_analysis(*args, **kwargs):
     return run_lpfp_analysis(*args, **kwargs)
 
+@st.cache_data(show_spinner="Running TTA/ATT Consistency Check...")
+def cached_run_tta_att_analysis(*args, **kwargs):
+    return run_tta_att_analysis(*args, **kwargs)
+
 # --- 3. Run Button and Logic ---
 st.divider()
 
@@ -600,6 +606,34 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                     module_status.update(label="Fuel Pump (LPFP) analysis failed.", state="error",
                                                          expanded=True)
 
+                        if run_tta_att:
+                            with st.status("Running TTA/ATT Consistency Check...",
+                                           expanded=True) as module_status:
+                                try:
+                                    tta_att_results = cached_run_tta_att_analysis(all_maps=all_maps)
+                                    if tta_att_results['status'] == 'Success':
+                                        module_status.update(label="TTA/ATT Check complete.",
+                                                             state="complete", expanded=False)
+                                    else:
+                                        # --- START: New, more detailed error display ---
+                                        all_warnings = tta_att_results.get('warnings', [])
+                                        debug_logs = tta_att_results.get('debug_logs', [])
+
+                                        for warning in all_warnings:
+                                            st.warning(f"TTA/ATT Check Warning: {warning}")
+
+                                        if debug_logs:
+                                            with st.expander("Click to view detailed TTA/ATT debug log"):
+                                                st.code('\n'.join(debug_logs), language=None)
+                                        # --- END: New, more detailed error display ---
+
+                                        module_status.update(label="TTA/ATT Check failed.", state="error",
+                                                             expanded=True)
+                                except Exception as e:
+                                    st.error(f"An unexpected error occurred during TTA/ATT Check: {e}")
+                                    module_status.update(label="TTA/ATT Check failed.", state="error",
+                                                         expanded=True)
+
                     status.update(label="Analysis complete!", state="complete", expanded=False)
 
                 # On successful completion of the 'with' block, show balloons
@@ -713,6 +747,29 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                         styled_lpfp_table = style_changed_cells(recommended_lpfp_df, original_lpfp_df)
                         display_table_with_copy_button(f"#### Recommended {table_key.upper()} Table",
                                                        styled_lpfp_table, recommended_lpfp_df)
+
+                if 'tta_att_results' in locals() and tta_att_results and tta_att_results.get(
+                        'status') == 'Success':
+                    with st.expander("TTA/ATT Consistency Check Results", expanded=True):
+                        if tta_att_results['warnings']:
+                            for warning in tta_att_results['warnings']:
+                                st.warning(f"TTA/ATT Check Warning: {warning}")
+
+                        st.info(
+                            "The table below shows the expected torque values calculated from the TTA table. Cells are highlighted in red if they deviate by more than 5% from your tune's actual ATT table.")
+
+                        result_tabs = st.tabs(sorted(tta_att_results['results'].keys()))
+                        for i, tab in enumerate(result_tabs):
+                            with tab:
+                                tab_name = sorted(tta_att_results['results'].keys())[i]
+                                data = tta_att_results['results'][tab_name]
+                                original_att_df = data['original_att']
+                                recommended_tta_inv_df = data['recommended_tta_inv']
+
+                                styled_table = style_deviation_cells(recommended_tta_inv_df, original_att_df,
+                                                                     threshold=0.05)
+                                display_table_with_copy_button(f"#### Recommended Inverse TTA for {tab_name}",
+                                                               styled_table, recommended_tta_inv_df)
 
                 # --- ADDED ---
                 # After a successful run, reset the flag to prevent re-running on the next interaction.
