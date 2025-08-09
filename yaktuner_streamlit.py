@@ -7,6 +7,7 @@ import re
 import traceback
 import sys
 import difflib
+from st_copy_button import st_copy_button
 from io import BytesIO
 
 # --- Add project root to sys.path ---
@@ -19,6 +20,7 @@ from LPFP import run_lpfp_analysis
 from MAF import run_maf_analysis
 from MFF import run_mff_analysis
 from KNK import run_knk_analysis
+from TTA_ATT import run_tta_att_analysis
 from tuning_loader import TuningData
 from error_reporter import send_to_google_sheets
 
@@ -48,6 +50,7 @@ with st.sidebar:
     run_mff = st.checkbox("Tune Mass Fuel Flow (MFF)", value=False, key="run_mff")
     run_ign = st.checkbox("Tune Ignition (KNK)", value=False, key="run_ign")
     run_lpfp = st.checkbox("Tune Low Pressure Pump Duty (LPFP)", value=False, key="run_lpfp")
+    run_tta_att = st.checkbox("TTA/ATT Consistency Check", value=False, key="run_tta_att")
 
     st.divider()
 
@@ -58,6 +61,18 @@ with st.sidebar:
         horizontal=True,
         help="...",
         key="firmware" # Add key
+    )
+
+    st.divider()
+
+    st.subheader("Global Settings")
+    oil_temp_unit = st.radio(
+        "Oil Temperature Unit in Log File",
+        ('F', 'C'),
+        index=0,  # Default to Fahrenheit
+        horizontal=True,
+        help="Select the unit for the 'OILTEMP' column in your log file. "
+             "If 'C' is selected, it will be converted to Fahrenheit for analysis."
     )
 
     st.divider()
@@ -85,6 +100,10 @@ with st.sidebar:
         max_adv = st.slider("Max Advance", 0.0, 2.0, 0.75, 0.25, key="max_adv")
 
     st.divider()
+    st.page_link("pages/2_PID_Downloads.py", label="PID Lists for Download", icon="📄")
+
+    st.divider()
+
 
     # --- Donation Link ---
     paypal_link = "https://www.paypal.com/donate/?hosted_button_id=MN43RKBR8AT6L"
@@ -117,6 +136,30 @@ if firmware == 'Other':
 
 
 # --- Helper Functions ---
+
+def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
+    """
+    Displays a title, a styled DataFrame with its index, and a button to copy
+    the raw data (without index/header) to the clipboard.
+
+    Args:
+        title (str): The title to display above the table.
+        styled_df: The Styler object for display (e.g., with highlighted cells).
+        raw_df (pd.DataFrame): The raw, unstyled DataFrame whose values will be copied.
+    """
+    st.write(title)
+
+    # Prepare the data for the clipboard: tab-separated, no index, no header.
+    # This is the format TunerPro expects for clean pasting.
+    clipboard_text = raw_df.to_csv(sep='\t', index=False, header=False)
+
+    # Display the table with its index visible for context.
+    st.dataframe(styled_df)
+
+    # Use a unique key for the button based on the title to avoid conflicts
+    button_label = f"📋 Copy {title.strip('# ')} Data"
+    st_copy_button(clipboard_text, button_label)
+    st.caption("Use the button above to copy data for pasting into TunerPro.")
 
 def normalize_header(header_name):
     """Normalizes a log file header for case-insensitive and unit-agnostic comparison."""
@@ -307,6 +350,37 @@ def style_changed_cells(new_df: pd.DataFrame, old_df: pd.DataFrame):
     except (ValueError, TypeError):
         return new_df.style
 
+
+def style_deviation_cells(new_df: pd.DataFrame, old_df: pd.DataFrame, threshold=0.05):
+    """
+    Compares two DataFrames and returns a Styler object with cells highlighted
+    if their relative deviation exceeds a threshold.
+    """
+    try:
+        new_df_c = new_df.copy().astype(float)
+        old_df_c = old_df.copy().astype(float)
+
+        # To avoid division by zero, we treat a zero in the old table as a special case.
+        # Any non-zero new value where the old was zero is a significant deviation.
+        # If both are zero, deviation is zero.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            deviation = np.abs((new_df_c - old_df_c) / old_df_c)
+
+        style_df = pd.DataFrame('', index=new_df.index, columns=new_df.columns)
+
+        # Highlight cells where deviation is > threshold.
+        # Also highlight where old was 0 and new is not, but ignore if both are 0.
+        highlight_style = 'background-color: #442B2B'  # Red for deviation
+        style_df[
+            (deviation > threshold) |
+            ((old_df_c == 0) & (new_df_c != 0))
+            ] = highlight_style
+
+        # Return the new dataframe with the calculated styles applied
+        return new_df.style.apply(lambda x: style_df, axis=None).format("{:.2f}")
+    except (ValueError, TypeError):
+        return new_df.style.format("{:.2f}")
+
 @st.cache_data(show_spinner="Running WG analysis...")
 def cached_run_wg_analysis(*args, **kwargs):
     return run_wg_analysis(*args, **kwargs)
@@ -326,6 +400,10 @@ def cached_run_knk_analysis(*args, **kwargs):
 @st.cache_data(show_spinner="Running LPFP analysis...")
 def cached_run_lpfp_analysis(*args, **kwargs):
     return run_lpfp_analysis(*args, **kwargs)
+
+#@st.cache_data(show_spinner="Running TTA/ATT Consistency Check...")
+def cached_run_tta_att_analysis(*args, **kwargs):
+    return run_tta_att_analysis(*args, **kwargs)
 
 # --- 3. Run Button and Logic ---
 st.divider()
@@ -356,6 +434,12 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             with st.status("Mapping log variables...", expanded=True) as mapping_status:
                 log_df = pd.concat((pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in uploaded_log_files),
                                    ignore_index=True)
+
+                if 'OILTEMP' in log_df.columns and oil_temp_unit == 'C':
+                    st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
+                    # Apply the conversion formula: F = C * 9/5 + 32
+                    log_df['OILTEMP'] = log_df['OILTEMP'] * 1.8 + 32
+                    st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
 
                 if not os.path.exists(default_vars):
                     raise FileNotFoundError(
@@ -544,6 +628,34 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                     module_status.update(label="Fuel Pump (LPFP) analysis failed.", state="error",
                                                          expanded=True)
 
+                        if run_tta_att:
+                            with st.status("Running TTA/ATT Consistency Check...",
+                                           expanded=True) as module_status:
+                                try:
+                                    tta_att_results = cached_run_tta_att_analysis(all_maps=all_maps)
+                                    if tta_att_results['status'] == 'Success':
+                                        module_status.update(label="TTA/ATT Check complete.",
+                                                             state="complete", expanded=False)
+                                    else:
+                                        # --- START: New, more detailed error display ---
+                                        all_warnings = tta_att_results.get('warnings', [])
+                                        debug_logs = tta_att_results.get('debug_logs', [])
+
+                                        for warning in all_warnings:
+                                            st.warning(f"TTA/ATT Check Warning: {warning}")
+
+                                        if debug_logs:
+                                            with st.expander("Click to view detailed TTA/ATT debug log"):
+                                                st.code('\n'.join(debug_logs), language=None)
+                                        # --- END: New, more detailed error display ---
+
+                                        module_status.update(label="TTA/ATT Check failed.", state="error",
+                                                             expanded=True)
+                                except Exception as e:
+                                    st.error(f"An unexpected error occurred during TTA/ATT Check: {e}")
+                                    module_status.update(label="TTA/ATT Check failed.", state="error",
+                                                         expanded=True)
+
                     status.update(label="Analysis complete!", state="complete", expanded=False)
 
                 # On successful completion of the 'with' block, show balloons
@@ -573,10 +685,9 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
                         tab1, tab2, tab3 = st.tabs(["📈 Recommended Tables", "📊 Scatter Plot", "🌡️ Temp Comp"])
                         with tab1:
-                            st.write("#### Recommended WGPID0 (VVL0)");
-                            st.dataframe(styled_vvl0)
-                            st.write("#### Recommended WGPID1 (VVL1)");
-                            st.dataframe(styled_vvl1)
+                            display_table_with_copy_button("#### Recommended WGPID0 (VVL0)", styled_vvl0, res_vvl0)
+                            st.divider()
+                            display_table_with_copy_button("#### Recommended WGPID1 (VVL1)", styled_vvl1, res_vvl1)
                         with tab2:
                             if scatter_plot:
                                 st.pyplot(scatter_plot)
@@ -584,8 +695,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                 st.info("Scatter plot was not generated.")
                         with tab3:
                             if temp_comp is not None:
-                                st.write("#### Recommended Temperature Compensation");
-                                st.dataframe(temp_comp)
+                                display_table_with_copy_button("#### Recommended Temperature Compensation",
+                                                               temp_comp.style, temp_comp)
                             else:
                                 st.info("No temperature compensation adjustments were recommended.")
 
@@ -603,8 +714,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                                            columns=[str(x) for x in module_maps['maftable0_X']])
                                 recommended_df = recommended_maf_dfs[f'IDX{i}']
                                 styled_table = style_changed_cells(recommended_df, original_df)
-                                st.write(f"#### Recommended `maftable{i}`");
-                                st.dataframe(styled_table)
+                                display_table_with_copy_button(f"#### Recommended `maftable{i}`", styled_table,
+                                                               recommended_df)
 
                 if mff_results and mff_results.get('status') == 'Success':
                     with st.expander("Multiplicative Fuel Factor (MFF) Tuning Results", expanded=True):
@@ -620,8 +731,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                                            columns=[str(x) for x in module_maps['MFFtable0_X']])
                                 recommended_df = recommended_mff_dfs[f'IDX{i}']
                                 styled_table = style_changed_cells(recommended_df, original_df)
-                                st.write(f"#### Recommended `MFFtable{i}`");
-                                st.dataframe(styled_table)
+                                display_table_with_copy_button(f"#### Recommended `MFFtable{i}`", styled_table,
+                                                               recommended_df)
 
                 if knk_results and knk_results.get('status') == 'Success':
                     with st.expander("Ignition Timing (KNK) Tuning Results", expanded=True):
@@ -632,12 +743,13 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                         module_maps = all_maps_data['knk']
                         tab1, tab2 = st.tabs(["📈 Recommended Table", "📊 Knock Scatter Plot"])
                         with tab1:
-                            st.write(f"#### Recommended Ignition Table (Correcting `{selected_map_name}`)")
                             original_df = pd.DataFrame(base_map_np,
                                                        index=[str(y) for y in module_maps['igyaxis']],
                                                        columns=[str(x) for x in module_maps['igxaxis']])
                             styled_table = style_changed_cells(recommended_knk_df, original_df)
-                            st.dataframe(styled_table)
+                            display_table_with_copy_button(
+                                f"#### Recommended Ignition Table (Correcting `{selected_map_name}`)",
+                                styled_table, recommended_knk_df)
                         with tab2:
                             if scatter_plot:
                                 st.pyplot(scatter_plot)
@@ -655,8 +767,31 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                                         index=[str(y) for y in module_maps['lpfppwm_Y']],
                                                         columns=[str(x) for x in module_maps['lpfppwm_X']])
                         styled_lpfp_table = style_changed_cells(recommended_lpfp_df, original_lpfp_df)
-                        st.write(f"#### Recommended {table_key.upper()} Table")
-                        st.dataframe(styled_lpfp_table)
+                        display_table_with_copy_button(f"#### Recommended {table_key.upper()} Table",
+                                                       styled_lpfp_table, recommended_lpfp_df)
+
+                if 'tta_att_results' in locals() and tta_att_results and tta_att_results.get(
+                        'status') == 'Success':
+                    with st.expander("TTA/ATT Consistency Check Results", expanded=True):
+                        if tta_att_results['warnings']:
+                            for warning in tta_att_results['warnings']:
+                                st.warning(f"TTA/ATT Check Warning: {warning}")
+
+                        st.info(
+                            "The table below shows the expected torque values calculated from the TTA table. Cells are highlighted in red if they deviate by more than 5% from your tune's actual ATT table.")
+
+                        result_tabs = st.tabs(sorted(tta_att_results['results'].keys()))
+                        for i, tab in enumerate(result_tabs):
+                            with tab:
+                                tab_name = sorted(tta_att_results['results'].keys())[i]
+                                data = tta_att_results['results'][tab_name]
+                                original_att_df = data['original_att']
+                                recommended_tta_inv_df = data['recommended_tta_inv']
+
+                                styled_table = style_deviation_cells(recommended_tta_inv_df, original_att_df,
+                                                                     threshold=0.05)
+                                display_table_with_copy_button(f"#### Recommended Inverse TTA for {tab_name}",
+                                                               styled_table, recommended_tta_inv_df)
 
                 # --- ADDED ---
                 # After a successful run, reset the flag to prevent re-running on the next interaction.
