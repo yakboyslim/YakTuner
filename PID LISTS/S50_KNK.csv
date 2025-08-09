@@ -1,7 +1,0 @@
-Name,Unit,Equation,Format,Address,Length,Signed,ProgMin,ProgMax,WarnMin,WarnMax,Smoothing,Enabled
-Engine Speed,rpm,x,%01.0f,0xd0012400,2,FALSE,0,7000,-1,10000,0,TRUE
-Knock Cyl 1 ,°,(x - 128) / 2.66666666666667,%01.2f,0xd0019888,1,FALSE,0,-5,-5,1,0,TRUE
-Knock Cyl 2,°,(x - 128) / 2.66666666666667,%01.2f,0xd0019889,1,FALSE,0,-5,-5,1,0,TRUE
-Knock Cyl 3,°,(x - 128) / 2.66666666666667,%01.2f,0xd001988a,1,FALSE,0,-5,-5,1,0,TRUE
-Knock Cyl 4,°,(x - 128) / 2.66666666666667,%01.2f,0xd001988b,1,FALSE,0,-5,-5,1,0,TRUE
-Airmass,mg/stk,x * 1000000,%01.0f,0xd00097b4,4,FALSE,0,2000,-100,50000,0,TRUE
