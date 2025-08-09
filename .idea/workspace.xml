@@ -5,10 +5,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="bba38646-2e18-422a-b9e7-e49774729f0b" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/YAKtunerCONVERTED.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/YAKtunerCONVERTED.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/A05.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/A05.xlsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/A05_KNK.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/A05_KNK.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/A05_MAF.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/A05_MAF.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/A05_WG.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/A05_WG.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/S50.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/S50.xlsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/S50_KNK.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/S50_KNK.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/S50_MAF.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/S50_MAF.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/S50_WG.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/S50_WG.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TTA_ATT.py" beforeDir="false" afterPath="$PROJECT_DIR$/TTA_ATT.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/yaktuner_streamlit.py" beforeDir="false" afterPath="$PROJECT_DIR$/yaktuner_streamlit.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -19,34 +25,34 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
-  "lastFilter": {
-    "state": "OPEN",
-    "assignee": "yakboyslim"
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;yakboyslim&quot;
   }
-}]]></component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/yakboyslim/YakTuner.git",
-    "accountId": "7749cae1-f697-4b19-9833-028c6b77e943"
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/yakboyslim/YakTuner.git&quot;,
+    &quot;accountId&quot;: &quot;7749cae1-f697-4b19-9833-028c6b77e943&quot;
   }
-}]]></component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "customColor": "",
-  "associatedIndex": 6
-}]]></component>
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 6
+}</component>
   <component name="ProjectId" id="312AOjL64rewbnVsSlLm5n3BVNO" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "web"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;web&quot;
   }
-}]]></component>
+}</component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>

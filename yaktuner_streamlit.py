@@ -385,7 +385,7 @@ def cached_run_knk_analysis(*args, **kwargs):
 def cached_run_lpfp_analysis(*args, **kwargs):
     return run_lpfp_analysis(*args, **kwargs)
 
-@st.cache_data(show_spinner="Running TTA/ATT Consistency Check...")
+#@st.cache_data(show_spinner="Running TTA/ATT Consistency Check...")
 def cached_run_tta_att_analysis(*args, **kwargs):
     return run_tta_att_analysis(*args, **kwargs)
 

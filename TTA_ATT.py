@@ -1,41 +1,51 @@
 import numpy as np
 import pandas as pd
 from scipy.interpolate import griddata
-import streamlit as st
-
+import re  # Import the regular expression module
 
 def _format_tta_att_suffix(map_suffix):
     """
-    Formats a map suffix like 'H_LFT_1_1_2' into a human-readable
-    name like 'H[VVL1][INT 0][EXH 1]'.
+    Formats a map suffix like 'H[STND][1][1]' or 'H_LFT_1_1_2' into a
+    human-readable name like 'H[VVL0][INT 0][EXH 0]'.
     """
-    # --- THIS IS THE DIAGNOSTIC LINE ---
-    st.warning(f"DEBUG: Formatting '{map_suffix}'...")
-    # ------------------------------------
+    # This regex is designed to parse strings like 'H[STND][1][1]' or 'H[LFT_1][1][1]'
+    # It captures four groups:
+    # 1. The prefix (e.g., 'H')
+    # 2. The mode (e.g., 'STND' or 'LFT_1')
+    # 3. The first index (e.g., '1')
+    # 4. The second index (e.g., '1')
+    pattern = re.compile(r"(\w+)\[(\w+(?:_\d+)?)\]\[(\d+)\]\[(\d+)\]")
+    match = pattern.match(map_suffix)
+
+    if not match:
+        # If the input doesn't match the expected bracketed format,
+        # it might be an already-correctly-formatted string or an unknown format.
+        # In either case, we return it as-is to avoid errors.
+        return map_suffix
+
     try:
-        parts = map_suffix.split('_')
-        if len(parts) < 3:
-            return map_suffix
+        prefix, mode, int_index_str, exh_index_str = match.groups()
 
-        exh_index = int(parts.pop()) - 1
-        int_index = int(parts.pop()) - 1
-        prefix = parts[0]
-        mode_identifier = parts[1].upper()
+        # Decrement the indices as requested
+        int_index = int(int_index_str) - 1
+        exh_index = int(exh_index_str) - 1
 
-        if mode_identifier == 'STD' and len(parts) == 2:
+        # Convert the mode to the desired VVL format
+        if mode.upper() == 'STND':
             vvl_mode = "VVL0"
-        elif mode_identifier == 'LFT' and len(parts) == 3:
-            vvl_mode = f"VVL{parts[2]}"
+        elif mode.upper().startswith('LFT_'):
+            # Extracts the '1' from 'LFT_1'
+            vvl_num = mode.split('_')[1]
+            vvl_mode = f"VVL{vvl_num}"
         else:
+            # If the mode is not recognized, return the original to be safe
             return map_suffix
 
-        formatted_name = f"{prefix}[{vvl_mode}][INT {int_index}][EXH {exh_index}]"
-        # --- ADD A SECOND DIAGNOSTIC LINE ---
-        st.warning(f"DEBUG: Result -> '{formatted_name}'")
-        # --------------------------------------
-        return formatted_name
+        return f"{prefix}[{vvl_mode}][INT {int_index}][EXH {exh_index}]"
 
     except (ValueError, IndexError):
+        # In case of any unexpected parsing error (e.g., non-integer indices),
+        # return the original suffix safely.
         return map_suffix
 
 
