@@ -7,7 +7,7 @@ import re
 import traceback
 import sys
 import difflib
-from streamlit_copy_to_clipboard import st_copy_to_clipboard
+from st_copy_button import st_copy_button
 from io import BytesIO
 
 # --- Add project root to sys.path ---
@@ -140,7 +140,7 @@ def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
 
     # Use a unique key for the button based on the title to avoid conflicts
     button_label = f"📋 Copy {title.strip('# ')} Data"
-    st_copy_to_clipboard(clipboard_text, button_label)
+    st_copy_button(clipboard_text, button_label)
     st.caption("Use the button above to copy data for pasting into TunerPro.")
 
 def normalize_header(header_name):
