@@ -5,22 +5,29 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="bba38646-2e18-422a-b9e7-e49774729f0b" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/pages/2_PID_Downloads.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PID LISTS/A05.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/A05.xlsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PID LISTS/A05_KNK.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/A05_KNK.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PID LISTS/A05_MAF.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/A05_MAF.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PID LISTS/A05_WG.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/A05_WG.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PID LISTS/S50.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/S50.xlsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PID LISTS/S50_KNK.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/S50_KNK.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PID LISTS/S50_MAF.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/S50_MAF.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/PID LISTS/S50_WG.csv" beforeDir="false" afterPath="$PROJECT_DIR$/Old PID LISTS/S50_WG.csv" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/TTA_ATT.py" beforeDir="false" afterPath="$PROJECT_DIR$/TTA_ATT.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/A05.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/A05_KNK.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/A05_MAF.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/A05_WG.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/S50.xlsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/S50_KNK.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/S50_MAF.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/PID LISTS/S50_WG.csv" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/yaktuner_streamlit.py" beforeDir="false" afterPath="$PROJECT_DIR$/yaktuner_streamlit.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
