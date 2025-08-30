@@ -137,6 +137,8 @@ if firmware == 'Other':
 
 # --- Helper Functions ---
 
+# In C:/Users/Sam/PycharmProjects/YAKtunerCONVERTED/yaktuner_streamlit.py
+
 def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
     """
     Displays a title, a styled DataFrame with its index, and a button to copy
@@ -158,7 +160,17 @@ def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
 
     # Use a unique key for the button based on the title to avoid conflicts
     button_label = f"📋 Copy {title.strip('# ')} Data"
-    st_copy_button(clipboard_text, button_label)
+
+    # --- FIX ---
+    # Generate a unique key from the title. This is crucial when this function
+    # is called inside a loop (e.g., for MAF or MFF tables), as each
+    # st_copy_button widget needs a distinct key to avoid a DuplicateKeyError.
+    # We create a simple, clean key by removing special characters from the title.
+    button_key = f"copy_btn_{re.sub(r'[^a-zA-Z0-9]', '', title)}"
+
+    st_copy_button(clipboard_text, button_label, key=button_key)
+    # --- END FIX ---
+
     st.caption("Use the button above to copy data for pasting into TunerPro.")
 
 def normalize_header(header_name):
@@ -188,62 +200,71 @@ def _find_best_match(target_name, log_headers, cutoff=0.7):
                 return original_header
     return None
 
-
 def map_log_variables_streamlit(log_df, varconv_df):
     """
     Performs a 3-tiered, robust, automatic, and interactive variable mapping.
-    This function is designed to be called from within an st.status block.
+    The automatic part runs in a status box, while the interactive form is
+    rendered in the main script body to avoid cloud-specific rerun conflicts.
     """
+    # This block runs once to perform auto-mapping and initialize the state.
     if 'mapping_initialized' not in st.session_state:
-        st.session_state.mapping_initialized = True
-        st.session_state.mapping_complete = False
-        st.session_state.vars_to_map = []
-        st.session_state.varconv_array = varconv_df.to_numpy()
-        st.session_state.log_df_mapped = log_df.copy()
+        with st.status("Automatically mapping log variables...", expanded=True) as status:
+            st.session_state.mapping_initialized = True
+            st.session_state.mapping_complete = False
+            st.session_state.vars_to_map = []
+            st.session_state.varconv_array = varconv_df.to_numpy()
+            st.session_state.log_df_mapped = log_df.copy()
 
-        varconv = st.session_state.varconv_array
-        log_headers = log_df.columns.tolist()
-        missing_vars_indices = []
+            varconv = st.session_state.varconv_array
+            available_log_headers = log_df.columns.tolist()
+            missing_vars_indices = []
+            found_vars_indices = set()
 
-        for i in range(1, varconv.shape[1]):
-            aliases_str = str(varconv[0, i])
-            canonical_name = varconv[1, i]
-            friendly_name = varconv[2, i] if varconv.shape[0] > 2 and pd.notna(varconv[2, i]) else canonical_name
+            # --- Pass 1: Prioritize Exact Alias Matches ---
+            for i in range(1, varconv.shape[1]):
+                aliases_str = str(varconv[0, i])
+                canonical_name = varconv[1, i]
+                aliases = aliases_str.split(',')
+                alias_match = _find_alias_match(aliases, available_log_headers)
 
-            match_found = False
-            best_match = None
+                if alias_match:
+                    st.session_state.log_df_mapped = st.session_state.log_df_mapped.rename(
+                        columns={alias_match: canonical_name}
+                    )
+                    st.session_state.varconv_array[0, i] = alias_match
+                    available_log_headers.remove(alias_match)
+                    found_vars_indices.add(i)
 
-            # Tier 1: Alias Matching
-            aliases = aliases_str.split(',')
-            alias_match = _find_alias_match(aliases, log_headers)
-            if alias_match:
-                best_match = alias_match
-                match_found = True
+            # --- Pass 2: Fuzzy Matching for Remaining Variables ---
+            for i in range(1, varconv.shape[1]):
+                if i in found_vars_indices:
+                    continue
 
-            # Tier 2: Fuzzy Matching
-            if not match_found:
-                fuzzy_match = _find_best_match(friendly_name, log_headers)
+                canonical_name = varconv[1, i]
+                friendly_name = varconv[2, i] if varconv.shape[0] > 2 and pd.notna(varconv[2, i]) else canonical_name
+                fuzzy_match = _find_best_match(friendly_name, available_log_headers)
+
                 if fuzzy_match:
-                    best_match = fuzzy_match
-                    match_found = True
+                    st.session_state.log_df_mapped = st.session_state.log_df_mapped.rename(
+                        columns={fuzzy_match: canonical_name}
+                    )
+                    st.session_state.varconv_array[0, i] = fuzzy_match
+                    available_log_headers.remove(fuzzy_match)
+                    found_vars_indices.add(i)
+                else:
+                    missing_vars_indices.append(i)
 
-            if match_found:
-                st.session_state.log_df_mapped = st.session_state.log_df_mapped.rename(
-                    columns={best_match: canonical_name}
-                )
-                st.session_state.varconv_array[0, i] = best_match
+            st.session_state.updated_varconv_df = pd.DataFrame(st.session_state.varconv_array)
+
+            if not missing_vars_indices:
+                st.session_state.mapping_complete = True
+                status.update(label="Variable mapping complete.", state="complete", expanded=False)
             else:
-                missing_vars_indices.append(i)
+                st.session_state.vars_to_map = missing_vars_indices
+                status.update(label="Manual input required...", state="complete", expanded=True)
 
-        st.session_state.updated_varconv_df = pd.DataFrame(st.session_state.varconv_array)
-
-        if not missing_vars_indices:
-            st.session_state.mapping_complete = True
-        else:
-            st.session_state.vars_to_map = missing_vars_indices
-            st.rerun()
-
-    if st.session_state.vars_to_map:
+    # This block handles the interactive part, showing one form at a time.
+    if st.session_state.get('vars_to_map'): # Use .get for safety
         varconv = st.session_state.varconv_array
         current_var_index = st.session_state.vars_to_map[0]
         prompt_name = varconv[2, current_var_index] if varconv.shape[0] > 2 and pd.notna(
@@ -269,11 +290,14 @@ def map_log_variables_streamlit(log_df, varconv_df):
                 if not st.session_state.vars_to_map:
                     st.session_state.mapping_complete = True
                     st.session_state.updated_varconv_df = pd.DataFrame(st.session_state.varconv_array)
+
                 st.rerun()
         return None
 
-    if st.session_state.mapping_complete:
+    # This block returns the final result only when the entire mapping process is finished.
+    if st.session_state.get('mapping_complete'):
         return st.session_state.log_df_mapped
+
     return None
 
 
@@ -421,38 +445,28 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
     if missing_files:
         st.error(f"Please upload all required files. Missing: {', '.join(missing_files)}")
-        st.session_state.run_analysis = False  # Reset state and allow the script to end gracefully
+        st.session_state.run_analysis = False
     else:
-        # --- All files are present, proceed with analysis ---
         try:
-            # Initialize all result dictionaries
             wg_results, maf_results, mff_results, knk_results, lpfp_results = None, None, None, None, None
-            all_maps_data = {}  # To store map data for result display
+            all_maps_data = {}
 
-            # --- Phase 1: Interactive Variable Mapping ---
-            mapped_log_df = None
-            with st.status("Mapping log variables...", expanded=True) as mapping_status:
-                log_df = pd.concat((pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in uploaded_log_files),
-                                   ignore_index=True)
+            # --- Phase 1: Interactive Variable Mapping (MODIFIED BLOCK) ---
+            # The st.status wrapper has been removed from here. The function now handles it internally.
+            log_df = pd.concat((pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in uploaded_log_files),
+                               ignore_index=True)
 
-                if 'OILTEMP' in log_df.columns and oil_temp_unit == 'C':
-                    st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
-                    # Apply the conversion formula: F = C * 9/5 + 32
-                    log_df['OILTEMP'] = log_df['OILTEMP'] * 1.8 + 32
-                    st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
+            if 'OILTEMP' in log_df.columns and oil_temp_unit == 'C':
+                st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
+                log_df['OILTEMP'] = log_df['OILTEMP'] * 1.8 + 32
+                st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
 
-                if not os.path.exists(default_vars):
-                    raise FileNotFoundError(
-                        f"Critical file missing: The default '{default_vars}' could not be found in the app directory.")
+            if not os.path.exists(default_vars):
+                raise FileNotFoundError(
+                    f"Critical file missing: The default '{default_vars}' could not be found.")
 
-                logvars_df = pd.read_csv(default_vars, header=None)
-                mapped_log_df = map_log_variables_streamlit(log_df, logvars_df)
-
-                if mapped_log_df is not None:
-                    mapping_status.update(label="Variable mapping complete.", state="complete", expanded=False)
-                else:
-                    # The mapping function is handling the UI and reruns, just wait.
-                    mapping_status.update(label="Waiting for user input to map variables...", state="running", expanded=True)
+            logvars_df = pd.read_csv(default_vars, header=None)
+            mapped_log_df = map_log_variables_streamlit(log_df, logvars_df)
 
             # --- This is the key change: The rest of the script only runs if mapping is complete ---
             if mapped_log_df is not None:
