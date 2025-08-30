@@ -202,37 +202,52 @@ def map_log_variables_streamlit(log_df, varconv_df):
         st.session_state.log_df_mapped = log_df.copy()
 
         varconv = st.session_state.varconv_array
-        log_headers = log_df.columns.tolist()
+        # Create a mutable list of headers that can be "consumed"
+        available_log_headers = log_df.columns.tolist()
         missing_vars_indices = []
+        found_vars_indices = set()
 
+        # --- Pass 1: Prioritize Exact Alias Matches ---
+        # Iterate through all required variables and claim the best exact matches first.
         for i in range(1, varconv.shape[1]):
             aliases_str = str(varconv[0, i])
             canonical_name = varconv[1, i]
+            aliases = aliases_str.split(',')
+
+            # Find an exact alias match from the pool of available headers
+            alias_match = _find_alias_match(aliases, available_log_headers)
+
+            if alias_match:
+                # If a match is found, map it and "consume" the header
+                st.session_state.log_df_mapped = st.session_state.log_df_mapped.rename(
+                    columns={alias_match: canonical_name}
+                )
+                st.session_state.varconv_array[0, i] = alias_match
+                available_log_headers.remove(alias_match)  # Prevent this header from being used again
+                found_vars_indices.add(i)
+
+        # --- Pass 2: Fuzzy Matching for Remaining Variables ---
+        # For any variables not found in the first pass, try fuzzy matching against the remaining headers.
+        for i in range(1, varconv.shape[1]):
+            if i in found_vars_indices:
+                continue  # Skip variables that were already mapped
+
+            canonical_name = varconv[1, i]
             friendly_name = varconv[2, i] if varconv.shape[0] > 2 and pd.notna(varconv[2, i]) else canonical_name
 
-            match_found = False
-            best_match = None
+            # Find the best fuzzy match from the remaining, un-mapped headers
+            fuzzy_match = _find_best_match(friendly_name, available_log_headers)
 
-            # Tier 1: Alias Matching
-            aliases = aliases_str.split(',')
-            alias_match = _find_alias_match(aliases, log_headers)
-            if alias_match:
-                best_match = alias_match
-                match_found = True
-
-            # Tier 2: Fuzzy Matching
-            if not match_found:
-                fuzzy_match = _find_best_match(friendly_name, log_headers)
-                if fuzzy_match:
-                    best_match = fuzzy_match
-                    match_found = True
-
-            if match_found:
+            if fuzzy_match:
+                # If a match is found, map it and consume the header
                 st.session_state.log_df_mapped = st.session_state.log_df_mapped.rename(
-                    columns={best_match: canonical_name}
+                    columns={fuzzy_match: canonical_name}
                 )
-                st.session_state.varconv_array[0, i] = best_match
+                st.session_state.varconv_array[0, i] = fuzzy_match
+                available_log_headers.remove(fuzzy_match) # Consume the header
+                found_vars_indices.add(i)
             else:
+                # If still not found, add to the list for manual mapping
                 missing_vars_indices.append(i)
 
         st.session_state.updated_varconv_df = pd.DataFrame(st.session_state.varconv_array)
