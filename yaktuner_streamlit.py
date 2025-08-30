@@ -137,6 +137,8 @@ if firmware == 'Other':
 
 # --- Helper Functions ---
 
+# In C:/Users/Sam/PycharmProjects/YAKtunerCONVERTED/yaktuner_streamlit.py
+
 def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
     """
     Displays a title, a styled DataFrame with its index, and a button to copy
@@ -158,7 +160,17 @@ def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
 
     # Use a unique key for the button based on the title to avoid conflicts
     button_label = f"📋 Copy {title.strip('# ')} Data"
-    st_copy_button(clipboard_text, button_label)
+
+    # --- FIX ---
+    # Generate a unique key from the title. This is crucial when this function
+    # is called inside a loop (e.g., for MAF or MFF tables), as each
+    # st_copy_button widget needs a distinct key to avoid a DuplicateKeyError.
+    # We create a simple, clean key by removing special characters from the title.
+    button_key = f"copy_btn_{re.sub(r'[^a-zA-Z0-9]', '', title)}"
+
+    st_copy_button(clipboard_text, button_label, key=button_key)
+    # --- END FIX ---
+
     st.caption("Use the button above to copy data for pasting into TunerPro.")
 
 def normalize_header(header_name):
