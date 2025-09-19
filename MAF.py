@@ -15,40 +15,48 @@ from scipy import stats, interpolate
 
 def _process_and_filter_maf_data(log, logvars):
     """
-    A pure function to prepare and filter log data for MAF tuning.
-    It returns a processed DataFrame and a list of warnings.
+    A pure function to prepare and filter log data for MAF tuning using the new
+    unified correction formula.
     """
     warnings = []
     df = log.copy()
 
-    # Use .loc for direct assignment to avoid SettingWithCopyWarning
-    df.loc[:, 'MAP'] = df['MAP'] * 10
-
+    # --- Pre-filtering (add your MAF-specific filters here) ---
     if "OILTEMP" in logvars:
         df = df[df['OILTEMP'] > 180].copy()
 
-    if 'LAM_DIF' not in logvars:
-        df.loc[:, 'LAM_DIF'] = 1/df['LAMBDA_SP'] - 1/df['LAMBDA']
-        warnings.append('Recommend logging LAM DIF. Using calculated value, but may introduce inaccuracy.')
+    # --- New Unified Correction Formula ---
+    required_vars = ['LAMBDA', 'LAMBDA_SP']
+    if not all(v in df.columns for v in required_vars):
+        raise ValueError(f"MAF analysis requires essential log variables: {required_vars}")
 
-    if "FAC_MFF_ADD" in logvars:
-        final_ltft = df["FAC_MFF_ADD"]
-    else:
-        final_ltft = df['LTFT']
+    maf_cor = df.get('MAF_COR', 0.0)
+    if 'MAF_COR' not in logvars: warnings.append("Log 'MAF_COR' for best accuracy.")
 
-    if 'FAC_LAM_OUT' in logvars:
-        final_stft = df['FAC_LAM_OUT']
-    else:
-        final_stft = df['STFT']
+    fac_stft = df.get('FAC_STFT', 0.0)
+    if 'FAC_STFT' not in logvars: warnings.append("Log 'FAC_STFT' for best accuracy.")
 
-    df.loc[:, 'ADD_MAF'] = final_stft + final_ltft - df['LAM_DIF']
+    mff_cor = df.get('MFF_COR', 1.0)
+    if 'MFF_COR' not in logvars: warnings.append("Log 'MFF_COR' for best accuracy.")
 
-    if 'MAF_COR' in logvars:
-        df.loc[:, 'ADD_MAF'] = df['ADD_MAF'] + df['MAF_COR']
-    else:
-        warnings.append('Recommend logging MAF_COR for increased accuracy.')
+    fac_ltft = df.get('FAC_LTFT', 0.0)
+    if 'FAC_LTFT' not in logvars: warnings.append("Log 'FAC_LTFT' for best accuracy.")
 
-    df = df[df['state_lam'] == 1].copy()
+    add_ltft = df.get('ADD_LTFT', 0.0)
+    if 'ADD_LTFT' not in logvars: warnings.append("Log 'ADD_LTFT' for best accuracy.")
+
+    total_ecu_factor = (1 + maf_cor/100) * (1 + fac_stft / 100) * mff_cor * (1 + (fac_ltft + abs (fac_ltft) * add_ltft) / 100)
+    #total_ecu_factor = (1 + maf_cor/100) * (1 + fac_stft / 100) * mff_cor * (1 + fac_ltft / 100)
+    measured_error = df['LAMBDA'] / df['LAMBDA_SP']
+    target_factor = total_ecu_factor * measured_error
+
+    # --- Calculate the new ADD_MAF value ---
+    # In MAF tuning, we solve for the additive correction MAF_COR_NEW.
+    # The MFF part of the new correction is assumed to be 1.
+    # Target_Factor = (1 + MAF_COR_NEW) * 1
+    maf_cor_new = target_factor - 1
+    df.loc[:, 'ADD_MAF'] = maf_cor_new  # The rest of the MAF module works with 'ADD_MAF'
+
     return df, warnings
 
 def _create_bins(log, mafxaxis, mafyaxis):
@@ -81,8 +89,8 @@ def _fit_surface_maf(log_data, mafxaxis, mafyaxis):
 def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafyaxis, confidence):
     """Applies confidence interval logic to determine the final correction table."""
     new_table = old_table.copy()
-    max_count = 100.0
-    interp_factor = 0.25
+    max_count = 80
+    interp_factor = 0.5
 
     for i in range(len(mafxaxis)):
         for j in range(len(mafyaxis)):
@@ -94,20 +102,21 @@ def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafy
                 low_ci, high_ci = stats.norm.interval(confidence, loc=mean, scale=std_dev if std_dev > 0 else 1e-9)
 
                 current_val = old_table[j, i]
-                change_made = False
-                new_val = current_val
+                # --- FIX: Use the specific surface value for the current cell ---
+                surface_val = blend_surface[j, i]
 
-                if low_ci > current_val:
-                    new_val = (blend_surface[j, i] * interp_factor + low_ci * (1 - interp_factor))
-                    change_made = True
-                elif high_ci < current_val:
-                    new_val = (blend_surface[j, i] * interp_factor + high_ci * (1 - interp_factor))
-                    change_made = True
+                # 1. Define a 'target' by blending the global surface fit and the local cell mean.
+                target_val = (surface_val * interp_factor) + (mean * (1 - interp_factor))
 
-                if change_made:
-                    # Weight the change by the number of data points, capped at max_count
+                # 2. Construct the CI around this new blended target.
+                low_ci, high_ci = stats.norm.interval(confidence, loc=target_val, scale=std_dev if std_dev > 0 else 1e-9)
+
+                # 3. Decide if a change is needed by comparing the current value to the new CI.
+                if not (low_ci <= current_val <= high_ci):
+                    # If a change is needed, the new value is our blended target.
+                    # Weight the change by the number of data points to control aggressiveness.
                     weight = min(count, max_count) / max_count
-                    change_amount = (new_val - current_val) * weight
+                    change_amount = (target_val - current_val) * weight
                     new_table[j, i] = current_val + change_amount
 
     # Quantize the final table to the ECU's resolution (5.12 = 256 / 50)
@@ -130,7 +139,7 @@ def run_maf_analysis(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars)
         dict: A dictionary containing all results.
     """
     print(" -> Initializing MAF analysis...")
-    params = {'confidence': 0.7} # Hardcoded parameter
+    params = {'confidence': 0.6} # Hardcoded parameter
 
     print(" -> Preparing MAF data from logs...")
     processed_log, warnings = _process_and_filter_maf_data(log, logvars)
