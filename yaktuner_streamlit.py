@@ -9,6 +9,7 @@ import sys
 import difflib
 from st_copy_button import st_copy_button
 from io import BytesIO
+from scipy import interpolate
 
 # --- Add project root to sys.path ---
 # This is a robust way to ensure that local modules can be imported.
@@ -172,6 +173,40 @@ def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
     # --- END FIX ---
 
     st.caption("Use the button above to copy data for pasting into TunerPro.")
+
+def _apply_advanced_state_lam_filter(df):
+    """
+    Filters the DataFrame to include all rows where state_lam is 1,
+    plus the first 5 rows immediately following each transition to state_lam=1.
+    This is applied globally to the log data.
+    """
+    if 'state_lam' not in df.columns:
+        # If the column doesn't exist, we can't filter. Return the dataframe as-is.
+        st.warning("Log variable 'state_lam' not found. Skipping advanced closed-loop filtering.")
+        return df
+
+    # Mask for all rows where state_lam is 1
+    state_lam_is_1_mask = (df['state_lam'] == 1)
+
+    # Identify the start of each state_lam=1 block by checking if the previous value was different
+    is_transition_start = state_lam_is_1_mask & (df['state_lam'].shift(1) != 1)
+
+    # Get the integer indices of these transition points
+    transition_indices = np.where(is_transition_start)[0]
+
+    # Create a mask that is True for 5 rows after each transition
+    post_transition_mask = pd.Series(False, index=df.index)
+    for idx in transition_indices:
+        # Set True for the slice from the transition index to index + 5
+        post_transition_mask.iloc[idx:idx + 5] = True
+
+    # The final mask is the union of the two conditions (all of state_lam=1 OR the 5 rows after transition)
+    final_mask = state_lam_is_1_mask | post_transition_mask
+
+    st.write(f"Applying advanced closed-loop filter. Original rows: {len(df)}, Filtered rows: {final_mask.sum()}")
+
+    return df[final_mask]
+
 
 def normalize_header(header_name):
     """Normalizes a log file header for case-insensitive and unit-agnostic comparison."""
@@ -470,6 +505,8 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
             # --- This is the key change: The rest of the script only runs if mapping is complete ---
             if mapped_log_df is not None:
+
+                mapped_log_df = _apply_advanced_state_lam_filter(mapped_log_df).copy()
                 # --- Phase 2: Main Analysis Pipeline ---
                 with st.status("Starting YAKtuner analysis...", expanded=True) as status:
                     if 'updated_varconv_df' in st.session_state:
@@ -506,6 +543,9 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                     )
 
                     if all_maps:
+                        # Prepare a log copy for MFF, which might be modified by the MAF stage
+                        log_for_mff = mapped_log_df.copy()
+
                         if run_wg:
                             with st.status("Running Wastegate (WG) analysis...", expanded=True) as module_status:
                                 try:
@@ -539,12 +579,16 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                     module_status.update(label="Wastegate (WG) analysis failed.", state="error", expanded=True)
 
                         if run_maf:
-                            with st.status("Running Mass Airflow (MAF) analysis...", expanded=True) as module_status:
+                            with st.status("Running Mass Airflow (MAF) analysis...",
+                                           expanded=True) as module_status:
                                 try:
-                                    keys = ['maftable0_X', 'maftable0_Y', 'combmodes_MAF'] + [f'maftable{i}' for i in range(4)]
+                                    keys = ['maftable0_X', 'maftable0_Y', 'combmodes_MAF'] + [f'maftable{i}'
+                                                                                              for i in
+                                                                                              range(4)]
                                     module_maps = {key: all_maps.get(key) for key in keys}
                                     missing = [key for key, val in module_maps.items() if val is None]
-                                    if missing: raise KeyError(f"A required map is missing: {', '.join(missing)}")
+                                    if missing: raise KeyError(
+                                        f"A required map is missing: {', '.join(missing)}")
                                     all_maps_data['maf'] = module_maps
 
                                     maf_results = cached_run_maf_analysis(
@@ -554,39 +598,100 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                         combmodes_MAF=module_maps['combmodes_MAF'],
                                         logvars=mapped_log_df.columns.tolist()
                                     )
+
                                     if maf_results['status'] == 'Success':
-                                        module_status.update(label="Mass Airflow (MAF) analysis complete.", state="complete", expanded=False)
+                                        module_status.update(label="Mass Airflow (MAF) analysis complete.",
+                                                             state="complete", expanded=False)
+
+                                        # If MFF is also selected, prepare the log for the second stage.
+                                        if run_mff:
+                                            module_status.update(
+                                                label="Preparing data for MFF second-stage...",
+                                                state="running")
+                                            # Get the primary new MAF table (IDX0)
+                                            new_maf_table_df = maf_results['results_maf']['IDX0']
+
+                                            # --- New ECU-like Interpolation Logic ---
+                                            # The ECU performs 2D linear interpolation and clamps to the edge
+                                            # of the map if coordinates are out of bounds. We replicate that here.
+
+                                            # 1. Define the axes and values for the interpolator.
+                                            y_axis_map = new_maf_table_df.index.astype(float).values
+                                            x_axis_rpm = new_maf_table_df.columns.astype(float).values
+                                            table_values = new_maf_table_df.values
+
+                                            # 2. Create a RegularGridInterpolator for linear interpolation.
+                                            # We set bounds_error=False and fill_value=None, as we will handle
+                                            # out-of-bounds values by clamping the inputs manually.
+                                            interpolator = interpolate.RegularGridInterpolator(
+                                                (y_axis_map, x_axis_rpm),  # Points are (MAP, RPM)
+                                                table_values,
+                                                method='linear',
+                                                bounds_error=False,
+                                                fill_value=None
+                                            )
+
+                                            # 3. Get the coordinates from the log file to be interpolated.
+                                            map_coords_to_interp = log_for_mff['MAP'].values
+                                            rpm_coords_to_interp = log_for_mff['RPM'].values
+
+                                            # 4. Clamp the coordinates to the boundaries of the table axes.
+                                            # This replicates the ECU's behavior of using the last row/column
+                                            # for any value outside the defined range.
+                                            clamped_map = np.clip(map_coords_to_interp, y_axis_map.min(), y_axis_map.max())
+                                            clamped_rpm = np.clip(rpm_coords_to_interp, x_axis_rpm.min(), x_axis_rpm.max())
+
+                                            # 5. Create a combined array of points and apply the interpolator.
+                                            points_to_interpolate = np.vstack((clamped_map, clamped_rpm)).T
+                                            log_for_mff['MAF_COR_NEW'] = interpolator(points_to_interpolate)
+                                            # --- End of New Interpolation Logic ---
                                     else:
                                         st.error("MAF analysis failed. Check warnings for details.")
-                                        module_status.update(label="Mass Airflow (MAF) analysis failed.", state="error", expanded=True)
+                                        module_status.update(label="Mass Airflow (MAF) analysis failed.",
+                                                             state="error", expanded=True)
                                 except Exception as e:
                                     st.error(f"An unexpected error occurred during MAF tuning: {e}")
-                                    module_status.update(label="Mass Airflow (MAF) analysis failed.", state="error", expanded=True)
+                                    module_status.update(label="Mass Airflow (MAF) analysis failed.",
+                                                         state="error", expanded=True)
 
                         if run_mff:
-                            with st.status("Running Fuel Factor (MFF) analysis...", expanded=True) as module_status:
+                            with st.status("Running Fuel Factor (MFF) analysis...",
+                                           expanded=True) as module_status:
                                 try:
-                                    keys = ['MFFtable0_X', 'MFFtable0_Y', 'combmodes_MFF'] + [f'MFFtable{i}' for i in range(5)]
+                                    keys = ['MFFtable0_X', 'MFFtable0_Y', 'combmodes_MFF'] + [f'MFFtable{i}'
+                                                                                              for i in
+                                                                                              range(5)]
                                     module_maps = {key: all_maps.get(key) for key in keys}
                                     missing = [key for key, val in module_maps.items() if val is None]
-                                    if missing: raise KeyError(f"A required map is missing: {', '.join(missing)}")
+                                    if missing: raise KeyError(
+                                        f"A required map is missing: {', '.join(missing)}")
                                     all_maps_data['mff'] = module_maps
 
+                                    # Determine the tuning mode for MFF based on whether MAF ran successfully
+                                    mff_tuning_mode = 'BOTH' if run_maf and maf_results and maf_results.get(
+                                        'status') == 'Success' else 'MFF'
+
                                     mff_results = cached_run_mff_analysis(
-                                        log=mapped_log_df, mffxaxis=module_maps['MFFtable0_X'],
+                                        log=log_for_mff,  # Use the potentially modified log
+                                        mffxaxis=module_maps['MFFtable0_X'],
                                         mffyaxis=module_maps['MFFtable0_Y'],
                                         mfftables=[module_maps[f'MFFtable{i}'] for i in range(5)],
                                         combmodes_MFF=module_maps['combmodes_MFF'],
-                                        logvars=mapped_log_df.columns.tolist()
+                                        logvars=mapped_log_df.columns.tolist(),
+                                        tuning_mode=mff_tuning_mode  # Pass the mode
                                     )
                                     if mff_results['status'] == 'Success':
-                                        module_status.update(label="Fuel Factor (MFF) analysis complete.", state="complete", expanded=False)
+                                        module_status.update(label="Fuel Factor (MFF) analysis complete.",
+                                                             state="complete", expanded=False)
                                     else:
                                         st.error("MFF analysis failed. Check warnings for details.")
-                                        module_status.update(label="Fuel Factor (MFF) analysis failed.", state="error", expanded=True)
+                                        module_status.update(label="Fuel Factor (MFF) analysis failed.",
+                                                             state="error", expanded=True)
                                 except Exception as e:
                                     st.error(f"An unexpected error occurred during MFF tuning: {e}")
-                                    module_status.update(label="Fuel Factor (MFF) analysis failed.", state="error", expanded=True)
+                                    module_status.update(label="Fuel Factor (MFF) analysis failed.",
+                                                         state="error", expanded=True)
+
 
                         if run_ign:
                             with st.status("Running Ignition (KNK) analysis...", expanded=True) as module_status:

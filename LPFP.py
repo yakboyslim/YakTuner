@@ -36,7 +36,6 @@ def _process_and_filter_lpfp_log_data(log, logvars):
 
     # Filter for rows where the pump is actively being controlled and in closed loop
     df = df[df['LPFP_PWM'] > 0].copy()
-    df = df[df['state_lam'] == 1]
     df.dropna(subset=required_vars, inplace=True)
 
     # --- Filtering Logic for data stability ---
@@ -118,9 +117,19 @@ def _calculate_lpfp_correction(log_data, blend_surface, old_table, xaxis, yaxis,
                 low_ci, high_ci = stats.norm.interval(confidence, loc=mean, scale=std_dev if std_dev > 0 else 1e-9)
                 current_val = old_table[j, i]
 
+                # --- FIX: Use the specific surface value for the current cell ---
+                surface_val = blend_surface[j, i]
+
+                # 1. Define the target value using the original 50/50 blend.
+                target_val = (surface_val + mean) / 2
+
+                # 2. Construct the CI around this new blended target.
+                low_ci, high_ci = stats.norm.interval(confidence, loc=target_val, scale=std_dev if std_dev > 0 else 1e-9)
+
+                # 3. Decide if a change is needed by comparing the current value to the new CI.
                 if not (low_ci <= current_val <= high_ci):
-                    new_val = (blend_surface[j, i] + mean) / 2
-                    new_table[j, i] = new_val
+                    # If outside, update the table directly to the target value.
+                    new_table[j, i] = target_val
                     changed_mask[j, i] = True
 
     recommended_table = np.round(new_table * 655.3599999999997) / 655.3599999999997
@@ -141,7 +150,7 @@ def run_lpfp_analysis(log, xaxis, yaxis, old_table, logvars):
         dict: A dictionary containing all results.
     """
     print(" -> Initializing LPFP analysis...")
-    params = {'confidence': 0.7}
+    params = {'confidence': 0.8}
 
     print(" -> Preparing LPFP data from logs...")
     processed_log, warnings = _process_and_filter_lpfp_log_data(log, logvars)
