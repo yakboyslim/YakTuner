@@ -176,34 +176,35 @@ def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
 
 def _apply_advanced_state_lam_filter(df):
     """
-    Filters the DataFrame to include all rows where state_lam is 1,
-    plus the first 5 rows immediately following each transition to state_lam=1.
-    This is applied globally to the log data.
+    Filters the DataFrame to keep rows where state_lam is 1,
+    but REMOVES the first 5 rows immediately following each transition to state_lam=1.
+    This helps to exclude data from the initial, potentially unstable, closed-loop period.
     """
     if 'state_lam' not in df.columns:
         # If the column doesn't exist, we can't filter. Return the dataframe as-is.
         st.warning("Log variable 'state_lam' not found. Skipping advanced closed-loop filtering.")
         return df
 
-    # Mask for all rows where state_lam is 1
+    # 1. Mask for all rows where state_lam is 1. This is our starting set.
     state_lam_is_1_mask = (df['state_lam'] == 1)
 
-    # Identify the start of each state_lam=1 block by checking if the previous value was different
+    # 2. Identify the start of each state_lam=1 block by checking if the previous value was different.
     is_transition_start = state_lam_is_1_mask & (df['state_lam'].shift(1) != 1)
 
-    # Get the integer indices of these transition points
+    # 3. Get the integer indices of these transition points.
     transition_indices = np.where(is_transition_start)[0]
 
-    # Create a mask that is True for 5 rows after each transition
-    post_transition_mask = pd.Series(False, index=df.index)
+    # 4. Create a mask that is True for the 5 rows to be REMOVED after each transition.
+    rows_to_remove_mask = pd.Series(False, index=df.index)
     for idx in transition_indices:
         # Set True for the slice from the transition index to index + 5
-        post_transition_mask.iloc[idx:idx + 5] = True
+        rows_to_remove_mask.iloc[idx:idx + 5] = True
 
-    # The final mask is the union of the two conditions (all of state_lam=1 OR the 5 rows after transition)
-    final_mask = state_lam_is_1_mask | post_transition_mask
+    # 5. The final mask keeps rows where state_lam is 1 AND the row is NOT in the removal mask.
+    #    The `~` operator inverts the boolean mask (True becomes False, and vice-versa).
+    final_mask = state_lam_is_1_mask & ~rows_to_remove_mask
 
-    st.write(f"Applying advanced closed-loop filter. Original rows: {len(df)}, Filtered rows: {final_mask.sum()}")
+    st.write(f"Applying advanced closed-loop filter (removing initial 5 rows). Original rows: {len(df)}, Filtered rows: {final_mask.sum()}")
 
     return df[final_mask]
 
