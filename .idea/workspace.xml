@@ -6,8 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="bba38646-2e18-422a-b9e7-e49774729f0b" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/MAF.py" beforeDir="false" afterPath="$PROJECT_DIR$/MAF.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/MFF.py" beforeDir="false" afterPath="$PROJECT_DIR$/MFF.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/yaktuner_streamlit.py" beforeDir="false" afterPath="$PROJECT_DIR$/yaktuner_streamlit.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
