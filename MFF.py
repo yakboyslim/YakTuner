@@ -45,28 +45,52 @@ def _process_and_filter_mff_data(log, logvars, tuning_mode='MFF'):
     if not all(v in df.columns for v in required_vars):
         raise ValueError(f"MFF analysis requires essential log variables: {required_vars}")
 
-    # Gracefully get all possible correction factors from the log.
+    # Gracefully get all potential correction factors from the log.
     # Defaults are chosen to be neutral (0 for additive, 1 for multiplicative).
-    # Based on your formula, we assume these are logged values.
     maf_cor = df.get('MAF_COR', 0.0)
     if 'MAF_COR' not in logvars: warnings.append("Log 'MAF_COR' for best accuracy.")
 
-    fac_stft = df.get('FAC_STFT', 0.0)
-    if 'FAC_STFT' not in logvars: warnings.append("Log 'FAC_STFT' for best accuracy.")
-
     mff_cor = df.get('MFF_COR', 1.0)
     if 'MFF_COR' not in logvars: warnings.append("Log 'MFF_COR' for best accuracy.")
+    # --- Retrieve all primary and fallback variables for STFT and LTFT ---
+    fac_stft = df.get('FAC_STFT', 0.0)
+    fac_lam_out = df.get('FAC_LAM_OUT', 0.0)
+    stft = df.get('STFT', 0.0)
 
     fac_ltft = df.get('FAC_LTFT', 0.0)
-    if 'FAC_LTFT' not in logvars: warnings.append("Log 'FAC_LTFT' for best accuracy.")
-
     add_ltft = df.get('ADD_LTFT', 0.0)
-    if 'ADD_LTFT' not in logvars: warnings.append("Log 'ADD_LTFT' for best accuracy.")
+    fac_mff_add = df.get('FAC_MFF_ADD', 0.0)
+    ltft = df.get('LTFT', 0.0)
+
+    # --- Construct LTFT Correction Term with Degradation ---
+    ltft_correction_term = 1.0
+    if 'FAC_LTFT' in logvars and 'ADD_LTFT' in logvars:
+        ltft_correction_term = (1 + (fac_ltft + abs(fac_ltft) * add_ltft) / 100)
+    elif 'FAC_MFF_ADD' in logvars:
+        ltft_correction_term = (1 + fac_mff_add / 100)
+        warnings.append("Using 'FAC_MFF_ADD' as fallback for LTFT correction.")
+    elif 'LTFT' in logvars:
+        ltft_correction_term = (1 + ltft / 100)
+        warnings.append("Using 'LTFT' as fallback for LTFT correction.")
+    else:
+        warnings.append("No suitable LTFT correction variable found. Assuming neutral LTFT correction (1.0).")
+
+    # --- Construct STFT Correction Term with Degradation ---
+    stft_correction_term = 1.0
+    if 'FAC_STFT' in logvars:
+        stft_correction_term = (1 + fac_stft / 100)
+    elif 'FAC_LAM_OUT' in logvars:
+        stft_correction_term = (1 + fac_lam_out / 100)
+        warnings.append("Using 'FAC_LAM_OUT' as fallback for STFT correction.")
+    elif 'STFT' in logvars:
+        stft_correction_term = (1 + stft / 100)
+        warnings.append("Using 'STFT' as fallback for STFT correction.")
+    else:
+        warnings.append("No suitable STFT correction variable found. Assuming neutral STFT correction (1.0).")
 
     # Calculate the total target correction factor needed.
     # Target_Factor = (all current ECU factors) * (measured_error)
-    total_ecu_factor = (1 + maf_cor/100) * (1 + fac_stft / 100) * mff_cor * (1 + (fac_ltft + abs (fac_ltft) * add_ltft) / 100)
-#    total_ecu_factor = (1 + maf_cor/100) * (1 + fac_stft / 100) * mff_cor * (1 + fac_ltft / 100)
+    total_ecu_factor = (1 + maf_cor/100) * stft_correction_term * mff_cor * ltft_correction_term
     measured_error = df['LAMBDA'] / df['LAMBDA_SP']
     target_factor = total_ecu_factor * measured_error
 
@@ -88,7 +112,6 @@ def _process_and_filter_mff_data(log, logvars, tuning_mode='MFF'):
         mff_cor_new = target_factor / (1 + maf_cor_new / 100)
         df.loc[:, 'MFF_FACTOR'] = mff_cor_new
 
-    df = df[df['state_lam'] == 1].copy()
     return df, warnings
 
 def _create_bins(log, mffxaxis, mffyaxis):
