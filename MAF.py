@@ -78,6 +78,7 @@ def _process_and_filter_maf_data(log, logvars):
     total_ecu_factor = (1 + maf_cor/100) * stft_correction_term * mff_cor * ltft_correction_term
     measured_error = df['LAMBDA'] / df['LAMBDA_SP']
     target_factor = total_ecu_factor * measured_error
+    df['target_factor'] = total_ecu_factor * measured_error
 
     # --- Calculate the new ADD_MAF value ---
     # In MAF tuning, we solve for the additive correction MAF_COR_NEW.
@@ -85,6 +86,28 @@ def _process_and_filter_maf_data(log, logvars):
     # Target_Factor = (1 + MAF_COR_NEW) * 1
     maf_cor_new = target_factor - 1
     df.loc[:, 'ADD_MAF'] = maf_cor_new  # The rest of the MAF module works with 'ADD_MAF'
+
+#    # --- START: One-off code to export Ethanol vs. Target Factor for analysis ---
+#    try:
+#        # Check if the 'ETHANOL' column (or your specific name for eth content) exists
+#        if 'Eth Content (%)' in df.columns:
+#            # Create a new DataFrame with just the two columns needed for analysis
+#            analysis_df = df[['Eth Content (%)', 'target_factor']].copy()
+#
+#            # Define the output filename
+#            output_filename = 'ethanol_target_factor_analysis.csv'
+#
+#            # Save the DataFrame to a CSV file, without the pandas index
+#            analysis_df.to_csv(output_filename, index=False)
+#
+#            print(f" -> Successfully exported Ethanol vs. Target Factor analysis to '{output_filename}'")
+#        else:
+#            # If the column isn't found, print a message to the console.
+#            print(" -> NOTE: Skipping Ethanol analysis export because 'Eth Content (%)' column was not found in the log data.")
+#    except Exception as e:
+#        # Catch any potential errors during file writing
+#        print(f" -> ERROR: Failed to export Ethanol analysis CSV. Reason: {e}")
+#    # --- END: One-off code block ---
 
     return df, warnings
 
