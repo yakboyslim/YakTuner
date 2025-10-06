@@ -25,6 +25,17 @@ def _process_and_filter_maf_data(log, logvars):
     if "OILTEMP" in logvars:
         df = df[df['OILTEMP'] > 180].copy()
 
+    # --- FIX: Unit conversion for MAP (kPa to hPa/mbar) ---
+    # The log provides MAP in kPa, but the table axes are in hPa.
+    # Multiply by 10 to ensure data is binned and interpolated correctly.
+    if 'MAP' in df.columns:
+        df.loc[:, 'MAP'] = df['MAP'] * 10
+    else:
+        # This is a critical variable, so we should warn if it's missing.
+        warnings.append("Log variable 'MAP' not found. MAF analysis will likely fail.")
+        return pd.DataFrame(), warnings
+    # --- END FIX ---
+
     # --- New Unified Correction Formula ---
     required_vars = ['LAMBDA', 'LAMBDA_SP']
     if not all(v in df.columns for v in required_vars):
