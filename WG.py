@@ -137,20 +137,46 @@ def _fit_surface(log_data, wgxaxis, wgyaxis):
 def _calculate_final_recommendations(log_data, blend, old_table, wgxaxis, wgyaxis, calculate_temp_coef=False):
     """
     Calculates the final recommended WG table by comparing the new fit with the old
-    table and applying confidence intervals to each cell.
+    table and applying confidence intervals to each cell using a predictive model.
     """
     final_table = old_table.copy()
     total_coef, count_coef = 0, 0
+
+    # Define blending factor and confidence level
+    interp_factor = 0.5  # 50/50 blend of surface fit and local data
+    confidence = 0.7  # Confidence level for the interval check
+
     for i in range(len(wgxaxis)):
-        for j in range(len(wgyaxis)):
+        for j in range(wgyaxis.shape[0]):
             cell_data = log_data[(log_data['X'] == i) & (log_data['Y'] == j)]
             if len(cell_data) > 3:
+                # Get stats from raw data. `mean` and `std_dev` are in percent (0-100).
                 mean, std_dev = stats.norm.fit(cell_data['WGNEED'])
-                low_ci, high_ci = stats.norm.interval(0.7, loc=mean, scale=std_dev)
-                current_val_scaled = old_table[j, i] * 100.0
-                if np.isnan(current_val_scaled) or not (low_ci <= current_val_scaled <= high_ci):
-                    new_val = (blend[j, i] + (mean / 100.0)) / 2
-                    final_table[j, i] = new_val
+
+                # Get surface value. `blend` is a factor (0-1).
+                surface_val_factor = blend[j, i]
+
+                # Get current value. `old_table` is a factor (0-1).
+                current_val_factor = old_table[j, i]
+
+                # --- START: New Logic ---
+                # 1. Define a 'target' by blending the global surface fit and the local cell mean.
+                #    Both values are converted to factors (0-1) for the calculation.
+                target_val_factor = (surface_val_factor * interp_factor) + ((mean / 100.0) * (1 - interp_factor))
+
+                # 2. Construct the CI around this new blended target.
+                #    The CI is calculated in factors, so the scale (std_dev) is also converted.
+                low_ci_factor, high_ci_factor = stats.norm.interval(
+                    confidence,
+                    loc=target_val_factor,
+                    scale=(std_dev / 100.0) if std_dev > 0 else 1e-9
+                )
+
+                # 3. Decide if a change is needed by comparing the current value (factor) to the new CI (factor).
+                if np.isnan(current_val_factor) or not (low_ci_factor <= current_val_factor <= high_ci_factor):
+                    # If outside the CI, update the table to the blended target value.
+                    final_table[j, i] = target_val_factor
+                # --- END: New Logic ---
             if calculate_temp_coef:
                 temp_log = cell_data[cell_data['BOOST'] >= 8]
                 if len(temp_log) > 2 and (temp_log['AMBTEMP'].max() > temp_log['AMBTEMP'].min() + 15):
