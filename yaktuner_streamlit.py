@@ -46,12 +46,12 @@ with st.sidebar:
     st.header("⚙️ Tuner Settings")
 
     # --- Module Selection ---
-    run_wg = st.checkbox("Tune Wastegate (WG)", value=True, key="run_wg")
-    run_maf = st.checkbox("Tune Mass Airflow (MAF)", value=False, key="run_maf")
-    run_mff = st.checkbox("Tune Mass Fuel Flow (MFF)", value=False, key="run_mff")
-    run_ign = st.checkbox("Tune Ignition (KNK)", value=False, key="run_ign")
-    run_lpfp = st.checkbox("Tune Low Pressure Pump Duty (LPFP)", value=False, key="run_lpfp")
-    run_tta_att = st.checkbox("TTA/ATT Consistency Check", value=False, key="run_tta_att")
+    run_wg = st.checkbox("Tune Wastegate (WG)", value=True, key="run_wg", help="Analyzes wastegate duty cycle (WGDC) and boost pressure to recommend adjustments for your base tables. Supports standard and SWG logic.")
+    run_maf = st.checkbox("Tune Mass Airflow (MAF)", value=False, key="run_maf", help="Corrects MAF scaling based on short-term and long-term fuel trims during closed-loop operation.")
+    run_mff = st.checkbox("Tune Mass Fuel Flow (MFF)", value=False, key="run_mff", help="Adjusts MFF tables based on fuel trims. If MAF tuning is also selected, this runs as a second stage for higher accuracy.")
+    run_ign = st.checkbox("Tune Ignition (KNK)", value=False, key="run_ign", help="Detects knock events across all cylinders and recommends ignition timing corrections for a selected base map.")
+    run_lpfp = st.checkbox("Tune Low Pressure Pump Duty (LPFP)", value=False, key="run_lpfp", help="Analyzes LPFP duty cycle and pressure to recommend table adjustments.")
+    run_tta_att = st.checkbox("TTA/ATT Consistency Check", value=False, key="run_tta_att", help="Verifies that your Torque-to-Air (TTA) and Air-to-Torque (ATT) tables are consistent. It checks for >5% deviation between the expected and actual torque.")
 
     st.divider()
 
@@ -60,8 +60,8 @@ with st.sidebar:
         "Firmware Version",
         options=ALL_FIRMWARES,
         horizontal=True,
-        help="...",
-        key="firmware" # Add key
+        help="Select your ECU's firmware. This loads the correct map definitions. If your version isn't listed, choose 'Other' and upload your XDF file.",
+        key="firmware"
     )
 
     st.divider()
@@ -81,11 +81,11 @@ with st.sidebar:
     # --- Module-Specific Settings ---
     if run_wg:
         st.subheader("WG Settings")
-        use_swg_logic = st.checkbox("Use SWG Logic", key="use_swg_logic")
+        use_swg_logic = st.checkbox("Use SWG Logic", key="use_swg_logic", help="Check this if your tune uses the Simplified Wastegate (SWG) logic. This changes which maps are used for the analysis.")
 
     if run_lpfp:
         st.subheader("LPFP Settings")
-        lpfp_drive = st.radio("2WD or 4WD", ('2WD', '4WD'), key="lpfp_drive")
+        lpfp_drive = st.radio("2WD or 4WD", ('2WD', '4WD'), key="lpfp_drive", help="Select whether the vehicle is 2WD or 4WD to ensure the correct LPFP duty table is loaded from the tune.")
 
 
     if run_ign:
@@ -95,10 +95,10 @@ with st.sidebar:
             "SP Map 4": 4, "SP Map 5": 5, "SP Flex Modifier": 6
         }
         selected_map_name = st.selectbox(
-            "Ignition Map Selection", options=list(ign_map_options.keys()), key="selected_ign_map"
+            "Ignition Map Selection", options=list(ign_map_options.keys()), key="selected_ign_map", help="Select the base ignition map you want to apply the knock corrections to. The tool will recommend changes for this specific map."
         )
         ign_map = ign_map_options[selected_map_name]
-        max_adv = st.slider("Max Advance", 0.0, 2.0, 0.75, 0.25, key="max_adv")
+        max_adv = st.slider("Max Advance", 0.0, 2.0, 0.75, 0.25, key="max_adv", help="Set the maximum amount of timing advance to add back per knock event. A lower value is safer.")
 
     st.divider()
     st.page_link("pages/2_PID_Downloads.py", label="PID Lists for Download", icon="📄")
@@ -126,14 +126,14 @@ with st.sidebar:
 
 # --- 2. Main Area for File Uploads ---
 st.subheader("1. Upload Tune & Log Files")
-uploaded_bin_file = st.file_uploader("Upload .bin file", type=['bin', 'all'])
-uploaded_log_files = st.file_uploader("Upload .csv log files", type=['csv'], accept_multiple_files=True)
+uploaded_bin_file = st.file_uploader("Upload .bin file", type=['bin', 'all'], help="Upload your tune file (e.g., my_tune.bin). This contains all the maps the tool will analyze.")
+uploaded_log_files = st.file_uploader("Upload .csv log files", type=['csv'], accept_multiple_files=True, help="Upload one or more data logs from your vehicle. The tool will combine them for analysis.")
 
 uploaded_xdf_file = None
 if firmware == 'Other':
     st.subheader("2. Upload Configuration File")
     st.info("Since you selected 'Other' firmware, you must provide an XDF file.")
-    uploaded_xdf_file = st.file_uploader("Upload .xdf definition file", type=['xdf'])
+    uploaded_xdf_file = st.file_uploader("Upload .xdf definition file", type=['xdf'], help="Upload the XDF definition file corresponding to your tune. This is required for 'Other' firmware to locate the maps.")
 
 
 # --- Helper Functions ---
