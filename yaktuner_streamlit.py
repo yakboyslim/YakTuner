@@ -633,8 +633,11 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                             )
 
                                             # 3. Get the coordinates from the log file to be interpolated.
-                                            map_coords_to_interp = log_for_mff['MAP'].values
+                                            # --- FIX: Apply the same kPa -> hPa conversion before interpolation ---
+                                            # This ensures the MAP values from the log match the scale of the new MAF table's Y-axis.
+                                            map_coords_to_interp = log_for_mff['MAP'].values * 10
                                             rpm_coords_to_interp = log_for_mff['RPM'].values
+                                            # --- END FIX ---
 
                                             # 4. Clamp the coordinates to the boundaries of the table axes.
                                             # This replicates the ECU's behavior of using the last row/column
