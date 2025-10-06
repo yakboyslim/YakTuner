@@ -487,9 +487,15 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             wg_results, maf_results, mff_results, knk_results, lpfp_results = None, None, None, None, None
             all_maps_data = {}
 
-            # --- Phase 1: Load Logs and Map Variables ---
+            # --- Phase 1: Interactive Variable Mapping (MODIFIED BLOCK) ---
+            # The st.status wrapper has been removed from here. The function now handles it internally.
             log_df = pd.concat((pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in uploaded_log_files),
                                ignore_index=True)
+
+            if 'OILTEMP' in log_df.columns and oil_temp_unit == 'C':
+                st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
+                log_df['OILTEMP'] = log_df['OILTEMP'] * 1.8 + 32
+                st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
 
             if not os.path.exists(default_vars):
                 raise FileNotFoundError(
@@ -498,21 +504,10 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             logvars_df = pd.read_csv(default_vars, header=None)
             mapped_log_df = map_log_variables_streamlit(log_df, logvars_df)
 
-            # --- The rest of the script only runs if mapping is complete ---
+            # --- This is the key change: The rest of the script only runs if mapping is complete ---
             if mapped_log_df is not None:
 
-                # --- START: CORRECTED TEMPERATURE CONVERSION ---
-                # This block now runs AFTER mapping, ensuring 'OILTEMP' exists.
-                if 'OILTEMP' in mapped_log_df.columns and oil_temp_unit == 'C':
-                    st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
-                    # Use .loc to ensure we are modifying the DataFrame directly
-                    mapped_log_df.loc[:, 'OILTEMP'] = mapped_log_df['OILTEMP'] * 1.8 + 32
-                    st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
-                # --- END: CORRECTED TEMPERATURE CONVERSION ---
-
-                # Apply global filters after all initial processing is done
                 mapped_log_df = _apply_advanced_state_lam_filter(mapped_log_df).copy()
-
                 # --- Phase 2: Main Analysis Pipeline ---
                 with st.status("Starting YAKtuner analysis...", expanded=True) as status:
                     if 'updated_varconv_df' in st.session_state:
@@ -549,25 +544,179 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                     )
 
                     if all_maps:
-                        # The rest of your analysis code follows...
-                        # (The following code is unchanged, but included for context)
+                        # Prepare a log copy for MFF, which might be modified by the MAF stage
                         log_for_mff = mapped_log_df.copy()
 
                         if run_wg:
-                            # ... (WG analysis code)
-                            pass # Placeholder for brevity
+                            with st.status("Running Wastegate (WG) analysis...", expanded=True) as module_status:
+                                try:
+                                    if use_swg_logic:
+                                        x_axis_key, y_axis_key, temp_comp_key, temp_comp_axis_key = 'swgpid0_X', 'swgpid0_Y', 'tempcomp', 'tempcompaxis'
+                                    else:
+                                        x_axis_key, y_axis_key, temp_comp_key, temp_comp_axis_key = 'wgpid0_X', 'wgpid0_Y', None, None
+
+                                    essential_keys = [x_axis_key, y_axis_key, 'wgpid0', 'wgpid1']
+                                    if use_swg_logic: essential_keys.extend([temp_comp_key, temp_comp_axis_key])
+
+                                    module_maps = {key: all_maps.get(key) for key in essential_keys if key}
+                                    missing = [key for key, val in module_maps.items() if val is None]
+                                    if missing: raise KeyError(f"A required map is missing: {', '.join(missing)}")
+                                    all_maps_data['wg'] = module_maps
+
+                                    wg_results = cached_run_wg_analysis(
+                                        log_df=mapped_log_df, wgxaxis=module_maps[x_axis_key], wgyaxis=module_maps[y_axis_key],
+                                        oldWG0=module_maps['wgpid0'], oldWG1=module_maps['wgpid1'],
+                                        logvars=mapped_log_df.columns.tolist(),
+                                        WGlogic=use_swg_logic, tempcomp=module_maps.get(temp_comp_key),
+                                        tempcompaxis=module_maps.get(temp_comp_axis_key)
+                                    )
+                                    if wg_results['status'] == 'Success':
+                                        module_status.update(label="Wastegate (WG) analysis complete.", state="complete", expanded=False)
+                                    else:
+                                        st.error("WG analysis failed. Check warnings and console logs for details.")
+                                        module_status.update(label="Wastegate (WG) analysis failed.", state="error", expanded=True)
+                                except Exception as e:
+                                    st.error(f"An unexpected error occurred during WG tuning: {e}")
+                                    module_status.update(label="Wastegate (WG) analysis failed.", state="error", expanded=True)
 
                         if run_maf:
-                            # ... (MAF analysis code)
-                            pass # Placeholder for brevity
+                            with st.status("Running Mass Airflow (MAF) analysis...",
+                                           expanded=True) as module_status:
+                                try:
+                                    keys = ['maftable0_X', 'maftable0_Y', 'combmodes_MAF'] + [f'maftable{i}'
+                                                                                              for i in
+                                                                                              range(4)]
+                                    module_maps = {key: all_maps.get(key) for key in keys}
+                                    missing = [key for key, val in module_maps.items() if val is None]
+                                    if missing: raise KeyError(
+                                        f"A required map is missing: {', '.join(missing)}")
+                                    all_maps_data['maf'] = module_maps
+
+                                    maf_results = cached_run_maf_analysis(
+                                        log=mapped_log_df, mafxaxis=module_maps['maftable0_X'],
+                                        mafyaxis=module_maps['maftable0_Y'],
+                                        maftables=[module_maps[f'maftable{i}'] for i in range(4)],
+                                        combmodes_MAF=module_maps['combmodes_MAF'],
+                                        logvars=mapped_log_df.columns.tolist()
+                                    )
+
+                                    if maf_results['status'] == 'Success':
+                                        module_status.update(label="Mass Airflow (MAF) analysis complete.",
+                                                             state="complete", expanded=False)
+
+                                        # If MFF is also selected, prepare the log for the second stage.
+                                        if run_mff:
+                                            module_status.update(
+                                                label="Preparing data for MFF second-stage...",
+                                                state="running")
+                                            # Get the primary new MAF table (IDX0)
+                                            new_maf_table_df = maf_results['results_maf']['IDX0']
+
+                                            # --- New ECU-like Interpolation Logic ---
+                                            # The ECU performs 2D linear interpolation and clamps to the edge
+                                            # of the map if coordinates are out of bounds. We replicate that here.
+
+                                            # 1. Define the axes and values for the interpolator.
+                                            y_axis_map = new_maf_table_df.index.astype(float).values
+                                            x_axis_rpm = new_maf_table_df.columns.astype(float).values
+                                            table_values = new_maf_table_df.values
+
+                                            # 2. Create a RegularGridInterpolator for linear interpolation.
+                                            # We set bounds_error=False and fill_value=None, as we will handle
+                                            # out-of-bounds values by clamping the inputs manually.
+                                            interpolator = interpolate.RegularGridInterpolator(
+                                                (y_axis_map, x_axis_rpm),  # Points are (MAP, RPM)
+                                                table_values,
+                                                method='linear',
+                                                bounds_error=False,
+                                                fill_value=None
+                                            )
+
+                                            # 3. Get the coordinates from the log file to be interpolated.
+                                            map_coords_to_interp = log_for_mff['MAP'].values
+                                            rpm_coords_to_interp = log_for_mff['RPM'].values
+
+                                            # 4. Clamp the coordinates to the boundaries of the table axes.
+                                            # This replicates the ECU's behavior of using the last row/column
+                                            # for any value outside the defined range.
+                                            clamped_map = np.clip(map_coords_to_interp, y_axis_map.min(), y_axis_map.max())
+                                            clamped_rpm = np.clip(rpm_coords_to_interp, x_axis_rpm.min(), x_axis_rpm.max())
+
+                                            # 5. Create a combined array of points and apply the interpolator.
+                                            points_to_interpolate = np.vstack((clamped_map, clamped_rpm)).T
+                                            log_for_mff['MAF_COR_NEW'] = interpolator(points_to_interpolate)
+                                            # --- End of New Interpolation Logic ---
+                                    else:
+                                        st.error("MAF analysis failed. Check warnings for details.")
+                                        module_status.update(label="Mass Airflow (MAF) analysis failed.",
+                                                             state="error", expanded=True)
+                                except Exception as e:
+                                    st.error(f"An unexpected error occurred during MAF tuning: {e}")
+                                    module_status.update(label="Mass Airflow (MAF) analysis failed.",
+                                                         state="error", expanded=True)
 
                         if run_mff:
-                            # ... (MFF analysis code)
-                            pass # Placeholder for brevity
+                            with st.status("Running Fuel Factor (MFF) analysis...",
+                                           expanded=True) as module_status:
+                                try:
+                                    keys = ['MFFtable0_X', 'MFFtable0_Y', 'combmodes_MFF'] + [f'MFFtable{i}'
+                                                                                              for i in
+                                                                                              range(5)]
+                                    module_maps = {key: all_maps.get(key) for key in keys}
+                                    missing = [key for key, val in module_maps.items() if val is None]
+                                    if missing: raise KeyError(
+                                        f"A required map is missing: {', '.join(missing)}")
+                                    all_maps_data['mff'] = module_maps
+
+                                    # Determine the tuning mode for MFF based on whether MAF ran successfully
+                                    mff_tuning_mode = 'BOTH' if run_maf and maf_results and maf_results.get(
+                                        'status') == 'Success' else 'MFF'
+
+                                    mff_results = cached_run_mff_analysis(
+                                        log=log_for_mff,  # Use the potentially modified log
+                                        mffxaxis=module_maps['MFFtable0_X'],
+                                        mffyaxis=module_maps['MFFtable0_Y'],
+                                        mfftables=[module_maps[f'MFFtable{i}'] for i in range(5)],
+                                        combmodes_MFF=module_maps['combmodes_MFF'],
+                                        logvars=mapped_log_df.columns.tolist(),
+                                        tuning_mode=mff_tuning_mode  # Pass the mode
+                                    )
+                                    if mff_results['status'] == 'Success':
+                                        module_status.update(label="Fuel Factor (MFF) analysis complete.",
+                                                             state="complete", expanded=False)
+                                    else:
+                                        st.error("MFF analysis failed. Check warnings for details.")
+                                        module_status.update(label="Fuel Factor (MFF) analysis failed.",
+                                                             state="error", expanded=True)
+                                except Exception as e:
+                                    st.error(f"An unexpected error occurred during MFF tuning: {e}")
+                                    module_status.update(label="Fuel Factor (MFF) analysis failed.",
+                                                         state="error", expanded=True)
+
 
                         if run_ign:
-                            # ... (IGN analysis code)
-                            pass # Placeholder for brevity
+                            with st.status("Running Ignition (KNK) analysis...", expanded=True) as module_status:
+                                try:
+                                    keys = ['igxaxis', 'igyaxis'] + [f'igmap{i}' for i in range(6)]
+                                    module_maps = {key: all_maps.get(key) for key in keys}
+                                    missing = [key for key, val in module_maps.items() if val is None and key in ['igxaxis', 'igyaxis', 'igmap0']]
+                                    if missing: raise KeyError(f"A required map for KNK tuning is missing: {', '.join(missing)}")
+                                    all_maps_data['knk'] = module_maps
+
+                                    knk_results = cached_run_knk_analysis(
+                                        log=mapped_log_df, igxaxis=module_maps['igxaxis'],
+                                        igyaxis=module_maps['igyaxis'],
+                                        IGNmaps=[module_maps.get(f'igmap{i}') for i in range(6)], max_adv=max_adv,
+                                        map_num=ign_map
+                                    )
+                                    if knk_results['status'] == 'Success':
+                                        module_status.update(label="Ignition (KNK) analysis complete.", state="complete", expanded=False)
+                                    else:
+                                        st.error("KNK analysis failed. Check warnings for details.")
+                                        module_status.update(label="Ignition (KNK) analysis failed.", state="error", expanded=True)
+                                except Exception as e:
+                                    st.error(f"An unexpected error occurred during KNK tuning: {e}")
+                                    module_status.update(label="Ignition (KNK) analysis failed.", state="error", expanded=True)
 
                         if run_lpfp:
                             with st.status("Running Fuel Pump (LPFP) analysis...", expanded=True) as module_status:
@@ -591,14 +740,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                         module_status.update(label="Fuel Pump (LPFP) analysis complete.",
                                                              state="complete", expanded=False)
                                     else:
-                                        # Display the specific warnings that caused the failure.
-                                        if lpfp_results and lpfp_results.get('warnings'):
-                                            for warning in lpfp_results['warnings']:
-                                                st.warning(f"LPFP Analysis Warning: {warning}")
-                                        else:
-                                            # Generic failure message if no specific warnings were returned.
-                                            st.error("LPFP analysis failed for an unknown reason. Check console logs.")
-
+                                        st.error("LPFP analysis failed. Check warnings for details.")
                                         module_status.update(label="Fuel Pump (LPFP) analysis failed.",
                                                              state="error", expanded=True)
                                 except Exception as e:
@@ -607,8 +749,32 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                                          expanded=True)
 
                         if run_tta_att:
-                            # ... (TTA/ATT analysis code)
-                            pass # Placeholder for brevity
+                            with st.status("Running TTA/ATT Consistency Check...",
+                                           expanded=True) as module_status:
+                                try:
+                                    tta_att_results = cached_run_tta_att_analysis(all_maps=all_maps)
+                                    if tta_att_results['status'] == 'Success':
+                                        module_status.update(label="TTA/ATT Check complete.",
+                                                             state="complete", expanded=False)
+                                    else:
+                                        # --- START: New, more detailed error display ---
+                                        all_warnings = tta_att_results.get('warnings', [])
+                                        debug_logs = tta_att_results.get('debug_logs', [])
+
+                                        for warning in all_warnings:
+                                            st.warning(f"TTA/ATT Check Warning: {warning}")
+
+                                        if debug_logs:
+                                            with st.expander("Click to view detailed TTA/ATT debug log"):
+                                                st.code('\n'.join(debug_logs), language=None)
+                                        # --- END: New, more detailed error display ---
+
+                                        module_status.update(label="TTA/ATT Check failed.", state="error",
+                                                             expanded=True)
+                                except Exception as e:
+                                    st.error(f"An unexpected error occurred during TTA/ATT Check: {e}")
+                                    module_status.update(label="TTA/ATT Check failed.", state="error",
+                                                         expanded=True)
 
                     status.update(label="Analysis complete!", state="complete", expanded=False)
 
