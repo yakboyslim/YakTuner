@@ -8,12 +8,22 @@ Welcome to YAKtuner Online, a web-based application designed to analyze engine d
 
 ### Key Features
 
-  * **Wastegate (WG) Tuning:** Analyzes WGDC and boost pressure to recommend adjustments to base tables, with support for both standard and SWG logic.
-  * **Mass Airflow (MAF) Tuning:** Corrects MAF scaling based on short-term and long-term fuel trims.
-  * **Multiplicative Fuel Factor (MFF) Tuning:** Adjusts MFF tables based on fuel trims.
-  * **Ignition (KNK) Tuning:** Detects knock events across all cylinders and recommends ignition timing corrections for a selected base map.
-  * **Low-Pressure Fuel Pump (LPFP) Tuning:** Analyzes LPFP duty cycle and pressure to recommend table adjustments.
+  * **Wastegate (WG) Tuning:** Analyzes wastegate duty cycle (WGDC), boost pressure, and IAT compensation to recommend precise adjustments for your base tables. It supports both standard and SWG (Simplified Wastegate) logic to adapt to your specific setup.
+
+  * **Mass Airflow (MAF) & Fuel Factor (MFF) Tuning:**
+    * **MAF Tuning:** Corrects the MAF scaling tables by analyzing short-term and long-term fuel trims (STFT/LTFT) during closed-loop operation. This ensures the ECU's air mass measurement is accurate.
+    * **MFF Tuning:** Adjusts the multiplicative fuel factor tables based on fuel trims to fine-tune fuel delivery.
+    * **Two-Stage MAF+MFF Analysis:** When both MAF and MFF tuning are selected, YAKtuner performs a sequential, two-stage analysis. First, it calculates the recommended MAF corrections. Then, it simulates the impact of those MAF changes on fueling and uses the *corrected* data to perform a more accurate MFF analysis. This ensures that MFF adjustments aren't skewed by an uncalibrated MAF sensor.
+    * **Additive Correction Mode:** If your logs do not contain `MAF_COR` or `MFF_COR` data, the tool automatically switches to an additive mode. In this mode, the calculated fuel trim adjustments are **added** to your existing tune tables, rather than replacing the values. This is ideal for making incremental adjustments or for initial tuning from a base map.
+
+  * **Ignition (KNK) Tuning:** Detects knock events across all cylinders from your logs. It then recommends specific ignition timing corrections for your selected base ignition map to improve safety and performance.
+
+  * **Low-Pressure Fuel Pump (LPFP) Tuning:** Analyzes the LPFP's duty cycle and pressure to recommend adjustments, ensuring your fuel system can keep up with demand.
+
+  * **TTA/ATT Consistency Check:** Verifies that your Torque-to-Air (TTA) and Air-to-Torque (ATT) tables are consistent with each other. It calculates the expected torque based on the TTA table and highlights any significant deviations (>5%) from your actual ATT table, helping you catch critical inconsistencies in your torque model.
+
   * **Interactive Log Variable Mapping:** A smart system that automatically finds the data it needs from your logs. If it's unsure about a variable, it will simply ask you to match it to the correct column from your log file.
+
   * **Built-in Error Reporting:** If the app encounters a problem, you can easily send a report directly to the developer to help improve the tool.
 
 -----
@@ -26,7 +36,7 @@ Follow these steps to get your recommended tune adjustments.
 
 On the left side of the page, set up your analysis session:
 
-  * **Select Modules:** Check the boxes for the analyses you want to perform (e.g., "Tune Wastegate (WG)").
+  * **Select Modules:** Check the boxes for the analyses you want to perform (e.g., "Tune Wastegate (WG)", "TTA/ATT Consistency Check").
   * **Select Firmware:** Choose your firmware from the list (S50, A05, etc.). This automatically loads the correct definition file. If your firmware isn't listed, select `Other`.
   * **Adjust Module Settings:** Configure specific options for the selected modules, such as "Use SWG Logic" for wastegate tuning or the target "Ignition Map Selection" for knock analysis.
 

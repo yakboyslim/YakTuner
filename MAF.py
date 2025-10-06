@@ -126,8 +126,11 @@ def _fit_surface_maf(log_data, mafxaxis, mafyaxis):
 
     return np.nan_to_num(fitted_surface)
 
-def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafyaxis, confidence):
-    """Applies confidence interval logic to determine the final correction table."""
+def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafyaxis, confidence, additive_mode=False):
+    """
+    Applies confidence interval logic to determine the final correction table.
+    Supports standard (replacement) and additive correction modes.
+    """
     new_table = old_table.copy()
     max_count = 80
     interp_factor = 0.5
@@ -139,25 +142,33 @@ def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafy
 
             if count > 3:
                 mean, std_dev = stats.norm.fit(cell_data['ADD_MAF'])
-                low_ci, high_ci = stats.norm.interval(confidence, loc=mean, scale=std_dev if std_dev > 0 else 1e-9)
-
-                current_val = old_table[j, i]
-                # --- FIX: Use the specific surface value for the current cell ---
                 surface_val = blend_surface[j, i]
 
-                # 1. Define a 'target' by blending the global surface fit and the local cell mean.
+                # 1. Define a 'target' correction by blending the global surface fit and the local cell mean.
                 target_val = (surface_val * interp_factor) + (mean * (1 - interp_factor))
 
-                # 2. Construct the CI around this new blended target.
+                # 2. Construct the Confidence Interval around this new blended target.
                 low_ci, high_ci = stats.norm.interval(confidence, loc=target_val, scale=std_dev if std_dev > 0 else 1e-9)
 
-                # 3. Decide if a change is needed by comparing the current value to the new CI.
-                if not (low_ci <= current_val <= high_ci):
-                    # If a change is needed, the new value is our blended target.
+                # The value from the original tune file
+                current_val_from_table = old_table[j, i]
+
+                # The value to compare against the confidence interval.
+                # In additive mode, we compare against 0 to see if any correction is needed.
+                # In standard mode, we compare against the table's current value to see if it's already correct.
+                comparison_val = 0.0 if additive_mode else current_val_from_table
+
+                # 3. Decide if a change is needed by comparing the comparison value to the new CI.
+                if not (low_ci <= comparison_val <= high_ci):
+                    # If a change is needed, calculate the amount of change.
                     # Weight the change by the number of data points to control aggressiveness.
                     weight = min(count, max_count) / max_count
-                    change_amount = (target_val - current_val) * weight
-                    new_table[j, i] = current_val + change_amount
+
+                    # The change amount is the difference between the target and the value we compared against.
+                    change_amount = (target_val - comparison_val) * weight
+
+                    # Apply the change to the value from the original table.
+                    new_table[j, i] = current_val_from_table + change_amount
 
     # Quantize the final table to the ECU's resolution (5.12 = 256 / 50)
     recommended_table = np.round(new_table * 5.12) / 5.12
@@ -184,6 +195,11 @@ def run_maf_analysis(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars)
     print(" -> Preparing MAF data from logs...")
     processed_log, warnings = _process_and_filter_maf_data(log, logvars)
 
+    # Determine if we are in additive mode (if MAF_COR is not available in logs)
+    additive_mode = 'MAF_COR' not in logvars
+    if additive_mode:
+        warnings.append("MAF_COR not found in logs. Switching to additive correction mode.")
+
     if processed_log.empty:
         return {'status': 'Failure', 'warnings': warnings, 'results_maf': None}
 
@@ -203,7 +219,7 @@ def run_maf_analysis(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars)
 
         print(f"   -> Calculating correction map for IDX{idx}...")
         recommended_table = _calculate_maf_correction(
-            log_filtered, blend_surface, current_table, mafxaxis, mafyaxis, params['confidence']
+            log_filtered, blend_surface, current_table, mafxaxis, mafyaxis, params['confidence'], additive_mode=additive_mode
         )
 
         # Store results as a DataFrame
