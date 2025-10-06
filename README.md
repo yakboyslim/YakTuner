@@ -14,6 +14,7 @@ Welcome to YAKtuner Online, a web-based application designed to analyze engine d
     * **MAF Tuning:** Corrects the MAF scaling tables by analyzing short-term and long-term fuel trims (STFT/LTFT) during closed-loop operation. This ensures the ECU's air mass measurement is accurate.
     * **MFF Tuning:** Adjusts the multiplicative fuel factor tables based on fuel trims to fine-tune fuel delivery.
     * **Two-Stage MAF+MFF Analysis:** When both MAF and MFF tuning are selected, YAKtuner performs a sequential, two-stage analysis. First, it calculates the recommended MAF corrections. Then, it simulates the impact of those MAF changes on fueling and uses the *corrected* data to perform a more accurate MFF analysis. This ensures that MFF adjustments aren't skewed by an uncalibrated MAF sensor.
+    * **Additive Correction Mode:** If your logs do not contain `MAF_COR` or `MFF_COR` data, the tool automatically switches to an additive mode. In this mode, the calculated fuel trim adjustments are **added** to your existing tune tables, rather than replacing the values. This is ideal for making incremental adjustments or for initial tuning from a base map.
 
   * **Ignition (KNK) Tuning:** Detects knock events across all cylinders from your logs. It then recommends specific ignition timing corrections for your selected base ignition map to improve safety and performance.
 

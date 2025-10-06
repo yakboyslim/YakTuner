@@ -154,8 +154,11 @@ def _fit_surface_mff(log_data, mffxaxis, mffyaxis):
 
     return clamped_surface
 
-def _calculate_mff_correction(log_data, blend_surface, old_table, mffxaxis, mffyaxis, confidence):
-    """Applies confidence interval logic to determine the final correction table."""
+def _calculate_mff_correction(log_data, blend_surface, old_table, mffxaxis, mffyaxis, confidence, additive_mode=False):
+    """
+    Applies confidence interval logic to determine the final correction table.
+    Supports standard (replacement) and additive correction modes.
+    """
     new_table = old_table.copy()
     max_count = 50
     interp_factor = 0.25
@@ -167,25 +170,34 @@ def _calculate_mff_correction(log_data, blend_surface, old_table, mffxaxis, mffy
 
             if count > 3:
                 mean, std_dev = stats.norm.fit(cell_data['MFF_FACTOR'])
-                low_ci, high_ci = stats.norm.interval(confidence, loc=mean, scale=std_dev if std_dev > 0 else 1e-9)
-
-                current_val = old_table[j, i]
-                # --- FIX: Use the specific surface value for the current cell ---
                 surface_val = blend_surface[j, i]
 
-                # 1. Define a 'target' by blending the global surface fit and the local cell mean.
+                # 1. Define a 'target' correction by blending the global surface fit and the local cell mean.
                 target_val = (surface_val * interp_factor) + (mean * (1 - interp_factor))
 
-                # 2. Construct the CI around this new blended target.
+                # 2. Construct the Confidence Interval around this new blended target.
                 low_ci, high_ci = stats.norm.interval(confidence, loc=target_val, scale=std_dev if std_dev > 0 else 1e-9)
 
-                # 3. Decide if a change is needed by comparing the current value to the new CI.
-                if not (low_ci <= current_val <= high_ci):
-                    # If a change is needed, the new value is our blended target.
+                # The value from the original tune file
+                current_val_from_table = old_table[j, i]
+
+                # The value to compare against the confidence interval.
+                # In additive mode, we compare against 1.0 (neutral) to see if any correction is needed.
+                # In standard mode, we compare against the table's current value.
+                comparison_val = 1.0 if additive_mode else current_val_from_table
+
+                # 3. Decide if a change is needed by comparing the comparison value to the new CI.
+                if not (low_ci <= comparison_val <= high_ci):
+                    # If a change is needed, calculate the amount of change.
                     # Weight the change by the number of data points to control aggressiveness.
                     weight = min(count, max_count) / max_count
-                    change_amount = (target_val - current_val) * weight
-                    new_table[j, i] = current_val + change_amount
+
+                    # The change amount is the difference between the target and the value we compared against.
+                    change_amount = (target_val - comparison_val) * weight
+
+                    # Apply the change to the value from the original table.
+                    # This works for both modes because in standard mode, change_amount is relative to the current value.
+                    new_table[j, i] = current_val_from_table + change_amount
 
     # Quantize the final table to a common ECU resolution for multiplicative factors (1/1024)
     recommended_table = np.round(new_table * 1024) / 1024
@@ -211,8 +223,12 @@ def run_mff_analysis(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars,
     params = {'confidence': 0.7}  # Hardcoded parameter
 
     print(" -> Preparing MFF data from logs...")
-    # --- FIX: Pass the tuning_mode to the data processing function ---
     processed_log, warnings = _process_and_filter_mff_data(log, logvars, tuning_mode=tuning_mode)
+
+    # Determine if we are in additive mode (if MFF_COR is not available in logs)
+    additive_mode = 'MFF_COR' not in logvars
+    if additive_mode:
+        warnings.append("MFF_COR not found in logs. Switching to additive correction mode.")
 
     if processed_log.empty:
         return {'status': 'Failure', 'warnings': warnings, 'results_mff': None}
@@ -234,7 +250,7 @@ def run_mff_analysis(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars,
 
         print(f"   -> Calculating correction map for IDX{idx}...")
         recommended_table = _calculate_mff_correction(
-            log_filtered, blend_surface, current_table, mffxaxis, mffyaxis, params['confidence']
+            log_filtered, blend_surface, current_table, mffxaxis, mffyaxis, params['confidence'], additive_mode=additive_mode
         )
 
         # Store results as a DataFrame
