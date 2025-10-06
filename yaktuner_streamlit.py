@@ -16,6 +16,12 @@ from scipy import interpolate
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # --- Import the custom tuning modules ---
+import google.generativeai as genai
+import faiss
+import pickle
+import fitz  # PyMuPDF
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from google.generativeai.tool import Tool
 from WG import run_wg_analysis
 from LPFP import run_lpfp_analysis
 from MAF import run_maf_analysis
@@ -354,7 +360,15 @@ def load_all_maps_streamlit(bin_content, xdf_content, xdf_name, firmware_setting
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xdf") as tmp_xdf:
                 tmp_xdf.write(xdf_content)
                 tmp_xdf_path = tmp_xdf.name
+
+            # --- MODIFIED: Load both standard and all maps ---
+            # 1. Load the standard maps required for YAKtuner's core functions
             loader.load_from_xdf(tmp_xdf_path, XDF_MAP_LIST_CSV)
+            # 2. Load ALL maps from the XDF for the diagnostic assistant
+            st.write("Loading all available maps from XDF for the assistant...")
+            loader.load_all_from_xdf(tmp_xdf_path)
+            # --- END MODIFICATION ---
+
         except Exception as e:
             st.error(f"Failed to parse XDF file.")
             st.exception(e)
@@ -544,6 +558,10 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                     )
 
                     if all_maps:
+                        # --- ADDED: Store loaded maps in session state for the tool ---
+                        st.session_state.all_maps_loaded = all_maps
+                        # --- END ADDED ---
+
                         # Prepare a log copy for MFF, which might be modified by the MAF stage
                         log_for_mff = mapped_log_df.copy()
 
@@ -956,3 +974,198 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             # --- ADDED ---
             # After an unsuccessful run, also reset the flag.
             st.session_state.run_analysis = False
+
+# --- 4. Interactive Diagnostic Assistant (NEW SECTION) ---
+st.divider()
+st.header("💡 Interactive Diagnostic Assistant")
+st.markdown("Ask a technical question about your tune, logs, or general ECU concepts. The assistant can use your uploaded `.bin` tune file for context.")
+
+# --- RAG and Tool Functionality ---
+
+# Constants for RAG
+INDEX_FILE = "faiss_index.index"
+CHUNKS_FILE = "chunks.pkl"
+EMBEDDING_MODEL = 'models/text-embedding-004'
+# Use a model that supports tools and has a high context window
+GENERATION_MODEL = 'gemini-1.5-pro-latest'
+
+# Load RAG data (cached)
+@st.cache_resource(show_spinner="Loading knowledge base...")
+def load_rag_data():
+    """Loads the FAISS index and text chunks from disk."""
+    if not os.path.exists(INDEX_FILE) or not os.path.exists(CHUNKS_FILE):
+        st.warning(f"Knowledge base files not found (`{INDEX_FILE}`, `{CHUNKS_FILE}`). Please run `build_rag_index.py` first to enable the Diagnostic Assistant.")
+        return None, None
+    try:
+        faiss_index = faiss.read_index(INDEX_FILE)
+        with open(CHUNKS_FILE, "rb") as f:
+            all_chunks = pickle.load(f)
+        return faiss_index, all_chunks
+    except Exception as e:
+        st.error(f"Error loading RAG data: {e}")
+        return None, None
+
+faiss_index, all_chunks = load_rag_data()
+
+# Tool: Function to get data from the tune file
+def get_tune_data(map_name: str) -> str:
+    """
+    Reads a specific map or table from the currently loaded binary ECU tune file.
+    To use this, you must first upload a .bin file in the main YAKtuner section
+    and run the analysis at least once to load the tune's data.
+
+    Args:
+        map_name (str): The exact name of the map to retrieve from the tune.
+                        The model should try to find the best match from the available maps.
+
+    Returns:
+        str: The map data as a string-formatted table, or an error message if not found.
+    """
+    # The 'all_maps' dictionary is loaded and cached in the main app logic.
+    # We access it via session state to make it available to this tool function.
+    if 'all_maps_loaded' not in st.session_state or not st.session_state.all_maps_loaded:
+        return "Error: Tune file has not been loaded and processed yet. The user must first upload their .bin file and run the main 'YAKtuner Analysis' at least once."
+
+    all_maps = st.session_state.all_maps_loaded
+
+    # Find the best match for the map name
+    best_match = _find_best_match(map_name, list(all_maps.keys()), cutoff=0.8)
+
+    if best_match:
+        map_data = all_maps[best_match]
+        # Convert numpy arrays or dataframes to a string representation
+        if isinstance(map_data, (pd.DataFrame, np.ndarray)):
+            df = pd.DataFrame(map_data)
+            return f"Data for map '{best_match}':\n{df.to_string()}"
+        else:
+            return f"Data for map '{best_match}':\n{str(map_data)}"
+    else:
+        # If no close match is found, inform the model about available maps.
+        available_maps = sorted(list(all_maps.keys()))
+        return f"Error: Map '{map_name}' not found. Try one of the following available maps: {', '.join(available_maps)}"
+
+# Main RAG generation function
+def generate_diag_answer(query, context, log_data=None, model=None):
+    """Generates an answer using the model, context, and optional log data."""
+    if model is None:
+        return "Error: Model not initialized.", []
+
+    context_str = "\n\n".join([f"Source: {chunk['source']}\nContent: {chunk['content']}" for chunk in context])
+
+    log_data_str = ""
+    if log_data is not None:
+        log_data_str = f"""
+        The user has also uploaded the following CSV log data for analysis:
+        ---LOG FILE DATA---
+        {log_data.to_string()}
+        --------------------
+        """
+
+    # The prompt is carefully structured to guide the model's reasoning process.
+    prompt = f"""
+    You are an expert automotive systems engineer and ECU tuner. Your knowledge comes from the ECU documentation provided in the CONTEXT.
+    You have access to tools that can read data directly from the user's uploaded tune file.
+
+    Analyze the user's QUESTION. Follow these steps:
+    1.  First, use the provided CONTEXT from the documentation to understand the system and answer the question.
+    2.  If the question requires specific values from the tune file (e.g., "what is my base timing at 4000 RPM?"), you MUST use the `get_tune_data` tool to retrieve it. Do not guess map names; use the tool to find the correct data.
+    3.  If the user has provided LOG FILE DATA, use it in your analysis to connect theory with real-world behavior.
+    4.  Formulate a comprehensive answer based *only* on the provided context, tool outputs, and log data. Be concise and precise.
+    5.  If the context and tools are insufficient to answer, clearly state that you cannot answer based on the provided information and explain what is missing.
+
+    {log_data_str}
+
+    CONTEXT FROM DOCUMENTATION:
+    ---
+    {context_str}
+    ---
+
+    QUESTION:
+    {query}
+
+    ANSWER:
+    """
+
+    try:
+        # Generate content with safety settings to reduce refusals
+        response = model.generate_content(
+            prompt,
+            safety_settings={
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            }
+        )
+        return response.text, context
+    except Exception as e:
+        return f"An error occurred while generating the response: {e}", context
+
+
+# --- UI for the assistant ---
+if faiss_index and all_chunks:
+    # API Key Input in the sidebar for a cleaner look
+    with st.sidebar:
+        st.divider()
+        st.subheader("💡 Assistant API Key")
+        if 'google_api_key' not in st.session_state:
+            st.session_state.google_api_key = ''
+
+        api_key_input = st.text_input(
+            "Enter Google API Key",
+            type="password",
+            key="api_key_input",
+            value=st.session_state.google_api_key,
+            help="Your key is used to power the Diagnostic Assistant. It is not stored or shared."
+        )
+        if api_key_input:
+            st.session_state.google_api_key = api_key_input
+
+    # User Input fields in the main area
+    user_query = st.text_input("Enter your diagnostic question:", placeholder="e.g., What does the 'combmodes_MAF' map control?", key="rag_query")
+    uploaded_diag_log = st.file_uploader("Upload a CSV data log for diagnostics (Optional)", type="csv", key="diag_log")
+
+    if st.button("Get Diagnostic Answer", key="get_diag_answer", use_container_width=True):
+        if not st.session_state.google_api_key:
+            st.error("Please enter your Google API Key in the sidebar to use the assistant.")
+        elif not user_query:
+            st.warning("Please enter a question.")
+        else:
+            with st.spinner("Calling the assistant... This may take a moment."):
+                try:
+                    # Configure the API key
+                    genai.configure(api_key=st.session_state.google_api_key)
+
+                    # Configure the generative model with the tool
+                    model = genai.GenerativeModel(
+                        GENERATION_MODEL,
+                        tools=[Tool.from_function(get_tune_data)]
+                    )
+
+                    # Handle uploaded log file
+                    log_dataframe = None
+                    if uploaded_diag_log is not None:
+                        log_dataframe = pd.read_csv(uploaded_diag_log, encoding='latin1')
+
+                    # 1. Retrieve context from RAG
+                    query_embedding_result = genai.embed_content(model=EMBEDDING_MODEL, content=user_query, task_type="retrieval_query")
+                    query_embedding = query_embedding_result['embedding']
+
+                    D, I = faiss_index.search(np.array([query_embedding], dtype='float32'), k=5)
+                    retrieved_context = [all_chunks[i] for i in I[0]]
+
+                    # 2. Generate Answer by calling the model
+                    answer, context = generate_diag_answer(user_query, retrieved_context, log_data=log_dataframe, model=model)
+
+                    # 3. Display results
+                    st.markdown("#### Assistant's Answer")
+                    st.info(answer) # Using st.info for better visual separation
+
+                    with st.expander("Show Retrieved Context from Documentation"):
+                        for i, chunk in enumerate(context):
+                            st.markdown(f"**Source:** {chunk['source']}")
+                            st.text_area("Content", chunk['content'], height=150, disabled=True, key=f"context_{i}")
+
+                except Exception as e:
+                    st.error(f"An error occurred with the generative model: {e}")
+                    st.error("Please check your API key, ensure it is valid, and that the model name is correct.")

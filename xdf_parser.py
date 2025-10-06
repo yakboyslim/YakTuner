@@ -4,6 +4,21 @@ import re
 import pprint  # Used for cleanly printing the output dictionary
 
 
+def _sanitize_title_for_variable(title):
+    """Sanitizes a map title to be a valid variable name."""
+    if not title:
+        return None
+    # Replace common separators with underscore
+    s = re.sub(r'[\s/\\-]', '_', title)
+    # Remove any characters that are not alphanumeric or underscore
+    s = re.sub(r'[^a-zA-Z0-9_]', '', s)
+    # Remove leading/trailing underscores
+    s = s.strip('_')
+    # Prevent multiple underscores
+    s = re.sub(r'__+', '_', s)
+    return s
+
+
 def _parse_single_table(variable_name, description, description_to_table_map, base_offset, results_dict):
     """
     Parses a single XDFTABLE, extracts its data, and recursively parses its axes.
@@ -191,3 +206,80 @@ def parse_xdf_maps(xdf_file_path, map_list_csv_path):
         print(f"An unexpected error occurred: {e}")
         return {}
 
+
+
+
+def parse_all_xdf_maps(xdf_file_path):
+    """
+    Parses an XDF file to extract ALL map definitions it contains.
+
+    This function iterates through every XDFTABLE, sanitizes its title to create
+    a variable name, and then extracts its parameters and linked axes.
+
+    Args:
+        xdf_file_path (str): The path to the .xdf file.
+
+    Returns:
+        dict: A dictionary of all parsed maps and their parameters.
+    """
+    try:
+        # --- 1. Parse the XDF file and get the root ---
+        tree = ET.parse(xdf_file_path)
+        root = tree.getroot()
+        print(f"Successfully parsed XDF file: {xdf_file_path}")
+
+        # --- 2. Extract the base offset from the header ---
+        base_offset_element = root.find('XDFHEADER/BASEOFFSET')
+        base_offset = int(base_offset_element.get('offset'), 16) if base_offset_element is not None else 0
+
+        # --- 3. Build description-to-table and title-to-table maps ---
+        description_to_table_map = {}
+        title_to_table_map = {}
+        for table in root.findall('XDFTABLE'):
+            title_element = table.find('title')
+            desc_element = table.find('description')
+
+            if title_element is not None and title_element.text:
+                title = title_element.text.strip()
+                title_to_table_map[title] = table
+
+            if desc_element is not None and desc_element.text:
+                first_line = desc_element.text.strip().splitlines()[0].strip()
+                description_to_table_map[first_line] = table
+
+        # --- 4. Iterate through all tables and parse each one ---
+        results_dict = {}
+        print(f"\nFound {len(title_to_table_map)} tables with titles to parse...")
+        for title, table_element in title_to_table_map.items():
+            variable_name = _sanitize_title_for_variable(title)
+            if not variable_name:
+                continue
+
+            # The description is needed for the recursive axis parsing
+            desc_element = table_element.find('description')
+            description = desc_element.text.strip().splitlines()[0].strip() if desc_element is not None and desc_element.text else ""
+
+            if not description:
+                print(f"Warning: Skipping table with title '{title}' because it has no description for axis lookups.")
+                continue
+
+            _parse_single_table(
+                variable_name=variable_name,
+                description=description,
+                description_to_table_map=description_to_table_map,
+                base_offset=base_offset,
+                results_dict=results_dict
+            )
+
+        print(f"\n--- Full XDF parsing complete. Found {len(results_dict)} total maps/axes. ---")
+        return results_dict
+
+    except FileNotFoundError:
+        print(f"Error: XDF file not found at '{xdf_file_path}'")
+        return {}
+    except ET.ParseError as e:
+        print(f"Error: Failed to parse XML in '{xdf_file_path}'. Details: {e}")
+        return {}
+    except Exception as e:
+        print(f"An unexpected error occurred during full XDF parse: {e}")
+        return {}
