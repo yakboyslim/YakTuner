@@ -69,8 +69,8 @@ def build_and_save_index():
     """
     # --- Configuration ---
     load_dotenv() # Load environment variables from .env file
-    PDF_PATH = "Split_Chapters"
-    TXT_PATH = "Combined_Descriptions"
+    PDF_PATH = "Split_Chapters_Test"
+    TXT_PATH = "Combined_Descriptions_Test"
     INDEX_FILE = "faiss_index.index"
     CHUNKS_FILE = "chunks.pkl"
     EMBEDDING_MODEL = 'models/text-embedding-004'
