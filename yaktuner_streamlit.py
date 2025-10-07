@@ -21,7 +21,6 @@ import faiss
 import pickle
 import fitz  # PyMuPDF
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
-from google.generativeai.tool import Tool
 from WG import run_wg_analysis
 from LPFP import run_lpfp_analysis
 from MAF import run_maf_analysis
@@ -1139,7 +1138,7 @@ if faiss_index and all_chunks:
                     # Configure the generative model with the tool
                     model = genai.GenerativeModel(
                         GENERATION_MODEL,
-                        tools=[Tool.from_function(get_tune_data)]
+                        tools=[get_tune_data]
                     )
 
                     # Handle uploaded log file
