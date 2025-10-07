@@ -492,11 +492,6 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             log_df = pd.concat((pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in uploaded_log_files),
                                ignore_index=True)
 
-            if 'OILTEMP' in log_df.columns and oil_temp_unit == 'C':
-                st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
-                log_df['OILTEMP'] = log_df['OILTEMP'] * 1.8 + 32
-                st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
-
             if not os.path.exists(default_vars):
                 raise FileNotFoundError(
                     f"Critical file missing: The default '{default_vars}' could not be found.")
@@ -506,6 +501,12 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
             # --- This is the key change: The rest of the script only runs if mapping is complete ---
             if mapped_log_df is not None:
+
+                if 'OILTEMP' in mapped_log_df.columns and oil_temp_unit == 'C':
+                    st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
+                    # Use .loc to ensure we are modifying the DataFrame directly
+                    mapped_log_df.loc[:, 'OILTEMP'] = mapped_log_df['OILTEMP'] * 1.8 + 32
+                    st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
 
                 mapped_log_df = _apply_advanced_state_lam_filter(mapped_log_df).copy()
                 # --- Phase 2: Main Analysis Pipeline ---
