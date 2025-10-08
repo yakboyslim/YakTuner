@@ -540,7 +540,6 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                         if os.path.exists(local_xdf_path):
                             with open(local_xdf_path, "rb") as f:
                                 xdf_content = f.read()
-                            st.session_state.xdf_content = xdf_content  # Store for on-demand tool
                             xdf_name = os.path.basename(local_xdf_path)
                         else:
                             raise FileNotFoundError(f"The pre-packaged XDF for {firmware} was not found at '{local_xdf_path}'.")
@@ -548,7 +547,6 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                         if uploaded_xdf_file is None:
                             raise FileNotFoundError("Please upload an XDF file for the 'Other' firmware option.")
                         xdf_content = uploaded_xdf_file.getvalue()
-                        st.session_state.xdf_content = xdf_content  # Store for on-demand tool
                         xdf_name = uploaded_xdf_file.name
 
                     all_maps = load_all_maps_streamlit(
@@ -1015,11 +1013,14 @@ def get_tune_data(map_description: str) -> str:
     Returns:
         str: The map data as a string-formatted table, or an error message if not found.
     """
-    if 'bin_content' not in st.session_state or 'xdf_content' not in st.session_state:
-        return "Error: The user has not uploaded both a .bin and .xdf file yet. Please ask them to do so."
+    if 'bin_content' not in st.session_state:
+        return "Error: The user has not uploaded a .bin file yet. Please ask them to do so."
+
+    xdf_content = _get_xdf_content()
+    if not xdf_content:
+        return "Error: Could not find the required XDF file. Please select a firmware or upload an XDF file if you are using the 'Other' option."
 
     bin_content = st.session_state.bin_content
-    xdf_content = st.session_state.xdf_content
 
     # Create temporary files to pass to the parser
     tmp_xdf_path = ""
@@ -1056,10 +1057,10 @@ def list_available_maps_tool() -> dict:
     This is useful for finding the correct `map_description` to use with the
     `get_tune_data` tool.
     """
-    if 'xdf_content' not in st.session_state:
-        return "Error: The user has not uploaded an XDF file yet."
+    xdf_content = _get_xdf_content()
+    if not xdf_content:
+        return "Error: Could not find the required XDF file. Please select a firmware or upload an XDF file if you are using the 'Other' option."
 
-    xdf_content = st.session_state.xdf_content
     tmp_xdf_path = ""
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xdf") as tmp_xdf:
@@ -1072,6 +1073,31 @@ def list_available_maps_tool() -> dict:
     finally:
         if os.path.exists(tmp_xdf_path):
             os.remove(tmp_xdf_path)
+
+
+def _get_xdf_content():
+    """
+    Helper function to get the correct XDF content based on the selected firmware.
+    It will use the default XDF for predefined firmwares or the user-uploaded
+    file for the 'Other' option.
+    Returns the content as bytes or None if not found.
+    """
+    firmware_choice = st.session_state.get('firmware', None)
+
+    if firmware_choice in PREDEFINED_FIRMWARES:
+        local_xdf_path = os.path.join(XDF_SUBFOLDER, f"{firmware_choice}.xdf")
+        if os.path.exists(local_xdf_path):
+            with open(local_xdf_path, "rb") as f:
+                return f.read()
+        else:
+            return None  # Or raise an error
+    elif firmware_choice == 'Other':
+        # For 'Other', we rely on the uploaded file being in session state
+        if 'xdf_content' in st.session_state and st.session_state.xdf_content:
+            return st.session_state.xdf_content
+        else:
+            return None
+    return None
 
 
 # --- UI for the assistant ---
