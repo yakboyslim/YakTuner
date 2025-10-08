@@ -27,7 +27,7 @@ from MAF import run_maf_analysis
 from MFF import run_mff_analysis
 from KNK import run_knk_analysis
 from TTA_ATT import run_tta_att_analysis
-from tuning_loader import TuningData
+from tuning_loader import TuningData, read_map_by_description
 from error_reporter import send_to_google_sheets
 
 # --- Constants ---
@@ -360,13 +360,8 @@ def load_all_maps_streamlit(bin_content, xdf_content, xdf_name, firmware_setting
                 tmp_xdf.write(xdf_content)
                 tmp_xdf_path = tmp_xdf.name
 
-            # --- MODIFIED: Load both standard and all maps ---
-            # 1. Load the standard maps required for YAKtuner's core functions
+            # Load the standard maps required for YAKtuner's core functions
             loader.load_from_xdf(tmp_xdf_path, XDF_MAP_LIST_CSV)
-            # 2. Load ALL maps from the XDF for the diagnostic assistant
-            st.write("Loading all available maps from XDF for the assistant...")
-            loader.load_all_from_xdf(tmp_xdf_path)
-            # --- END MODIFICATION ---
 
         except Exception as e:
             st.error(f"Failed to parse XDF file.")
@@ -535,6 +530,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
                     status.update(label="Loading tune files...")
                     bin_content = uploaded_bin_file.getvalue()
+                    st.session_state.bin_content = bin_content  # Store for on-demand tool
                     xdf_content = None
                     xdf_name = None
 
@@ -543,6 +539,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                         if os.path.exists(local_xdf_path):
                             with open(local_xdf_path, "rb") as f:
                                 xdf_content = f.read()
+                            st.session_state.xdf_content = xdf_content  # Store for on-demand tool
                             xdf_name = os.path.basename(local_xdf_path)
                         else:
                             raise FileNotFoundError(f"The pre-packaged XDF for {firmware} was not found at '{local_xdf_path}'.")
@@ -550,6 +547,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                         if uploaded_xdf_file is None:
                             raise FileNotFoundError("Please upload an XDF file for the 'Other' firmware option.")
                         xdf_content = uploaded_xdf_file.getvalue()
+                        st.session_state.xdf_content = xdf_content  # Store for on-demand tool
                         xdf_name = uploaded_xdf_file.name
 
                     all_maps = load_all_maps_streamlit(
@@ -557,10 +555,6 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                     )
 
                     if all_maps:
-                        # --- ADDED: Store loaded maps in session state for the tool ---
-                        st.session_state.all_maps_loaded = all_maps
-                        # --- END ADDED ---
-
                         # Prepare a log copy for MFF, which might be modified by the MAF stage
                         log_for_mff = mapped_log_df.copy()
 
@@ -1007,41 +1001,51 @@ def load_rag_data():
 faiss_index, all_chunks = load_rag_data()
 
 # Tool: Function to get data from the tune file
-def get_tune_data(map_name: str) -> str:
+def get_tune_data(map_description: str) -> str:
     """
-    Reads a specific map or table from the currently loaded binary ECU tune file.
-    To use this, you must first upload a .bin file in the main YAKtuner section
-    and run the analysis at least once to load the tune's data.
+    Reads a specific map or table from the user's uploaded .bin file by looking
+    up its definition in the corresponding .xdf file using the map's description.
+    This tool reads the data on-demand.
 
     Args:
-        map_name (str): The exact name of the map to retrieve from the tune.
-                        The model should try to find the best match from the available maps.
+        map_description (str): The exact description of the map to retrieve, as found in the XDF.
+                               For example: "Base table for multiplicative fuel adaptation"
 
     Returns:
         str: The map data as a string-formatted table, or an error message if not found.
     """
-    # The 'all_maps' dictionary is loaded and cached in the main app logic.
-    # We access it via session state to make it available to this tool function.
-    if 'all_maps_loaded' not in st.session_state or not st.session_state.all_maps_loaded:
-        return "Error: Tune file has not been loaded and processed yet. The user must first upload their .bin file and run the main 'YAKtuner Analysis' at least once."
+    if 'bin_content' not in st.session_state or 'xdf_content' not in st.session_state:
+        return "Error: The user has not uploaded both a .bin and .xdf file yet. Please ask them to do so."
 
-    all_maps = st.session_state.all_maps_loaded
+    bin_content = st.session_state.bin_content
+    xdf_content = st.session_state.xdf_content
 
-    # Find the best match for the map name
-    best_match = _find_best_match(map_name, list(all_maps.keys()), cutoff=0.8)
+    # Create temporary files to pass to the parser
+    tmp_xdf_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xdf") as tmp_xdf:
+            tmp_xdf.write(xdf_content)
+            tmp_xdf_path = tmp_xdf.name
 
-    if best_match:
-        map_data = all_maps[best_match]
-        # Convert numpy arrays or dataframes to a string representation
-        if isinstance(map_data, (pd.DataFrame, np.ndarray)):
-            df = pd.DataFrame(map_data)
-            return f"Data for map '{best_match}':\n{df.to_string()}"
-        else:
-            return f"Data for map '{best_match}':\n{str(map_data)}"
-    else:
-        # If no close match is found, inform the model about available maps.
-        available_maps = sorted(list(all_maps.keys()))
-        return f"Error: Map '{map_name}' not found. Try one of the following available maps: {', '.join(available_maps)}"
+        # Use the on-demand reader
+        map_data_dict = read_map_by_description(tmp_xdf_path, map_description, bin_content)
+
+        if not map_data_dict:
+            return f"Error: Could not find or parse map with description '{map_description}'. Please try a different description."
+
+        # Format the output for the model
+        output = ""
+        for name, data in map_data_dict.items():
+            df = pd.DataFrame(data)
+            output += f"Data for map '{name}':\n{df.to_string()}\n\n"
+
+        return output.strip()
+
+    except Exception as e:
+        return f"An unexpected error occurred while reading the tune data: {e}"
+    finally:
+        if os.path.exists(tmp_xdf_path):
+            os.remove(tmp_xdf_path)
 
 
 def query_log_file(natural_language_query: str) -> str:
@@ -1174,7 +1178,7 @@ if faiss_index and all_chunks:
 
                     **Available Tools:**
                     - `query_log_file(natural_language_query: str)`: Use this to investigate specific conditions in the log file (e.g., "show me STFT and LTFT when RPM is above 4000").
-                    - `get_tune_data(map_name: str)`: Use this to look up specific maps in the user's tune file (e.g., "MAF_Scaling_Table").
+                    - `get_tune_data(map_description: str)`: Use this to look up a specific map in the user's tune file using its description string (e.g., "Base table for multiplicative fuel adaptation").
 
                     ---
                     **CONTEXT FROM DOCUMENTATION:**

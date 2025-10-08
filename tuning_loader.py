@@ -4,8 +4,28 @@ from asteval import Interpreter
 import os
 import io
 
-from xdf_parser import parse_xdf_maps, parse_all_xdf_maps
+from xdf_parser import parse_xdf_maps, parse_all_xdf_maps, parse_map_by_description
 from BinRead import read_maps_from_config
+
+
+def read_map_by_description(xdf_file_path, map_description, binary_content):
+    """
+    Parses an XDF to find a single map by its description, reads its data from
+    the binary content, and returns it. This is for on-demand loading.
+    """
+    print(f"\n--- On-demand read for description: '{map_description}' ---")
+
+    # Step 1: Parse just the required map definition from the XDF
+    map_definitions = parse_map_by_description(xdf_file_path, map_description)
+
+    if not map_definitions:
+        print(f"Could not find or parse definition for map with description '{map_description}'.")
+        return None
+
+    # Step 2: Read the data for the found map definitions from the binary
+    processed_maps = _read_data_from_xdf_definitions(map_definitions, binary_content)
+
+    return processed_maps
 
 
 def _map_xdf_type_to_numpy(data_size_bits, is_signed, endian='<'):
@@ -107,27 +127,6 @@ class TuningData:
         xdf_maps_data = _read_data_from_xdf_definitions(xdf_definitions, self.binary_content)
         self.maps.update(xdf_maps_data)
         print(f"--- XDF loading complete. Loaded {len(xdf_maps_data)} maps. ---")
-
-    def load_all_from_xdf(self, xdf_file_path):
-        """
-        Parses an XDF to get ALL map definitions, then reads the data.
-        This is used for the diagnostic assistant to have access to every map.
-        """
-        print(f"\n--- Loading ALL maps from XDF for assistant: {os.path.basename(xdf_file_path)} ---")
-        if not os.path.exists(xdf_file_path):
-            print(f"Warning: XDF file not found at '{xdf_file_path}'.")
-            return
-
-        xdf_definitions = parse_all_xdf_maps(xdf_file_path)
-        if not xdf_definitions:
-            print("No map definitions were parsed from the XDF. Nothing to load.")
-            return
-
-        xdf_maps_data = _read_data_from_xdf_definitions(xdf_definitions, self.binary_content)
-        # We update the maps dictionary with any newly found maps
-        self.maps.update(xdf_maps_data)
-        print(f"--- Full XDF loading complete. Total maps in memory: {len(self.maps)}. ---")
-
 
     def load_from_manual_config(self, manual_config_csv_path, firmware_address_col, overrides=None):
         """

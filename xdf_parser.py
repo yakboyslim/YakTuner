@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 import csv
 import re
 import pprint  # Used for cleanly printing the output dictionary
+import difflib
 
 
 def _sanitize_title_for_variable(title):
@@ -207,71 +208,66 @@ def parse_xdf_maps(xdf_file_path, map_list_csv_path):
         return {}
 
 
-
-
-def parse_all_xdf_maps(xdf_file_path):
+def parse_map_by_description(xdf_file_path, map_description):
     """
-    Parses an XDF file to extract ALL map definitions it contains.
-
-    This function iterates through every XDFTABLE, sanitizes its title to create
-    a variable name, and then extracts its parameters and linked axes.
-
+    Parses an XDF file to extract a single map definition by its description.
+    This function finds a specific map by its description text, extracts its
+    parameters, and also parses any linked axis tables.
     Args:
         xdf_file_path (str): The path to the .xdf file.
-
+        map_description (str): The exact first line of the description for the map to find.
     Returns:
-        dict: A dictionary of all parsed maps and their parameters.
+        dict: A dictionary containing the parsed parameters for the requested map
+              and its axes. Returns an empty dictionary if parsing fails or the
+              map is not found.
     """
     try:
         # --- 1. Parse the XDF file and get the root ---
         tree = ET.parse(xdf_file_path)
         root = tree.getroot()
-        print(f"Successfully parsed XDF file: {xdf_file_path}")
 
         # --- 2. Extract the base offset from the header ---
         base_offset_element = root.find('XDFHEADER/BASEOFFSET')
         base_offset = int(base_offset_element.get('offset'), 16) if base_offset_element is not None else 0
 
-        # --- 3. Build description-to-table and title-to-table maps ---
+        # --- 3. Build a fast lookup map from description to table element ---
         description_to_table_map = {}
-        title_to_table_map = {}
         for table in root.findall('XDFTABLE'):
-            title_element = table.find('title')
             desc_element = table.find('description')
-
-            if title_element is not None and title_element.text:
-                title = title_element.text.strip()
-                title_to_table_map[title] = table
-
-            if desc_element is not None and desc_element.text:
+            if desc_element is not None and desc_element.text and desc_element.text.strip():
                 first_line = desc_element.text.strip().splitlines()[0].strip()
                 description_to_table_map[first_line] = table
 
-        # --- 4. Iterate through all tables and parse each one ---
+        # --- 4. Find the requested map and parse it ---
         results_dict = {}
-        print(f"\nFound {len(title_to_table_map)} tables with titles to parse...")
-        for title, table_element in title_to_table_map.items():
-            variable_name = _sanitize_title_for_variable(title)
-            if not variable_name:
-                continue
 
-            # The description is needed for the recursive axis parsing
-            desc_element = table_element.find('description')
-            description = desc_element.text.strip().splitlines()[0].strip() if desc_element is not None and desc_element.text else ""
+        table_element = description_to_table_map.get(map_description)
+        if table_element is None:
+            # If no exact match, try to find the best fuzzy match
+            best_match = difflib.get_close_matches(map_description, description_to_table_map.keys(), n=1, cutoff=0.8)
+            if not best_match:
+                print(f"Error: Could not find a table with the description: '{map_description}'")
+                return {}
+            map_description = best_match[0]
+            table_element = description_to_table_map[map_description]
 
-            if not description:
-                print(f"Warning: Skipping table with title '{title}' because it has no description for axis lookups.")
-                continue
+        title_element = table_element.find('title')
+        if title_element is None or not title_element.text:
+            print(f"Warning: Table with description '{map_description}' has no title. Cannot create variable name.")
+            return {}
 
-            _parse_single_table(
-                variable_name=variable_name,
-                description=description,
-                description_to_table_map=description_to_table_map,
-                base_offset=base_offset,
-                results_dict=results_dict
-            )
+        variable_name = _sanitize_title_for_variable(title_element.text.strip())
+        if not variable_name:
+            return {}
 
-        print(f"\n--- Full XDF parsing complete. Found {len(results_dict)} total maps/axes. ---")
+        _parse_single_table(
+            variable_name=variable_name,
+            description=map_description,
+            description_to_table_map=description_to_table_map,
+            base_offset=base_offset,
+            results_dict=results_dict
+        )
+
         return results_dict
 
     except FileNotFoundError:
@@ -281,5 +277,5 @@ def parse_all_xdf_maps(xdf_file_path):
         print(f"Error: Failed to parse XML in '{xdf_file_path}'. Details: {e}")
         return {}
     except Exception as e:
-        print(f"An unexpected error occurred during full XDF parse: {e}")
+        print(f"An unexpected error occurred: {e}")
         return {}
