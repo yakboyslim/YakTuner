@@ -986,7 +986,7 @@ INDEX_FILE = "faiss_index.index"
 CHUNKS_FILE = "chunks.pkl"
 EMBEDDING_MODEL = 'models/text-embedding-004'
 # Use a model that supports tools and has a high context window
-GENERATION_MODEL = 'gemini-1.5-pro-latest'
+GENERATION_MODEL = 'gemini-1.5-pro'
 
 # Load RAG data (cached)
 @st.cache_resource(show_spinner="Loading knowledge base...")
@@ -1065,7 +1065,7 @@ def query_log_file(natural_language_query: str) -> str:
 
     # Use a separate, focused model call to translate the NLQ to a Pandas query
     try:
-        translator_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        translator_model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""
         You are a data analysis expert. Your task is to convert a natural language query into a Python Pandas DataFrame query string.
         The DataFrame is named `log_df`.
