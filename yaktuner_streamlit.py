@@ -29,6 +29,7 @@ from KNK import run_knk_analysis
 from TTA_ATT import run_tta_att_analysis
 from tuning_loader import TuningData, read_map_by_description
 from error_reporter import send_to_google_sheets
+from xdf_parser import list_available_maps
 
 # --- Constants ---
 default_vars = "variables.csv"
@@ -1048,56 +1049,29 @@ def get_tune_data(map_description: str) -> str:
             os.remove(tmp_xdf_path)
 
 
-def query_log_file(natural_language_query: str) -> str:
+def list_available_maps_tool() -> dict:
     """
-    Accepts a natural-language query and translates it into a Pandas DataFrame query
-    to filter the user's uploaded log file. Returns the filtered data as a string.
-    This should be used to investigate specific conditions in the log file.
-
-    Args:
-        natural_language_query (str): A question in plain English about what data to find in the log.
-                                      For example: "Show me all rows where RPM is greater than 4000 and throttle is over 80%"
-
-    Returns:
-        str: The resulting data from the log file as a string-formatted DataFrame, or an error message.
+    Parses the user's uploaded XDF file to find all available maps and returns
+    a dictionary mapping the machine-readable map title to its full description.
+    This is useful for finding the correct `map_description` to use with the
+    `get_tune_data` tool.
     """
-    if 'diag_log_df' not in st.session_state or st.session_state.diag_log_df is None:
-        return "Error: A log file has not been uploaded yet. Please ask the user to upload a log file first."
+    if 'xdf_content' not in st.session_state:
+        return "Error: The user has not uploaded an XDF file yet."
 
-    log_df = st.session_state.diag_log_df
-    columns_list = log_df.columns.tolist()
-
-    # Use a separate, focused model call to translate the NLQ to a Pandas query
+    xdf_content = st.session_state.xdf_content
+    tmp_xdf_path = ""
     try:
-        translator_model = genai.GenerativeModel('gemini-1.5-flash')
-        prompt = f"""
-        You are a data analysis expert. Your task is to convert a natural language query into a Python Pandas DataFrame query string.
-        The DataFrame is named `log_df`.
-        The available columns are: {columns_list}
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xdf") as tmp_xdf:
+            tmp_xdf.write(xdf_content)
+            tmp_xdf_path = tmp_xdf.name
 
-        Analyze the user's query and return ONLY the syntactically correct Pandas query string.
-        Do not return any other text, explanation, or markdown.
-
-        Example Query: "Show me data where RPM is over 4000 and the throttle is wide open."
-        Example Output: (RPM > 4000) & (THROTTLE > 80)
-
-        User Query: "{natural_language_query}"
-        Pandas Query String:
-        """
-        response = translator_model.generate_content(prompt)
-        pandas_query_string = response.text.strip().replace('`', '')
-
-        # Execute the generated query
-        filtered_df = log_df.query(pandas_query_string)
-
-        if filtered_df.empty:
-            return "The query returned no results from the log file. Try a different query."
-        else:
-            # Return a sample to avoid overwhelming the context window
-            return f"Query Result (showing up to 20 rows):\n{filtered_df.head(20).to_string()}"
-
+        return list_available_maps(tmp_xdf_path)
     except Exception as e:
-        return f"An error occurred while querying the log file: {e}. The generated query may have been invalid. Please try rephrasing your query."
+        return f"An error occurred while listing available maps: {e}"
+    finally:
+        if os.path.exists(tmp_xdf_path):
+            os.remove(tmp_xdf_path)
 
 
 # --- UI for the assistant ---
@@ -1123,20 +1097,6 @@ if faiss_index and all_chunks:
     user_query = st.text_input("Enter your diagnostic question:", placeholder="e.g., What does the 'combmodes_MAF' map control?", key="rag_query")
     uploaded_diag_log = st.file_uploader("Upload a CSV data log for diagnostics (Optional)", type="csv", key="diag_log")
 
-    # Load the log data into session state as soon as it's uploaded
-    if uploaded_diag_log is not None:
-        try:
-            st.session_state.diag_log_df = pd.read_csv(uploaded_diag_log, encoding='latin1')
-            st.success(f"Log file `{uploaded_diag_log.name}` loaded and ready for the assistant.")
-        except Exception as e:
-            st.error(f"Error reading diagnostic log file: {e}")
-            st.session_state.diag_log_df = None
-    else:
-        # Clear the state if the file is removed
-        if 'diag_log_df' in st.session_state:
-            st.session_state.diag_log_df = None
-
-
     if st.button("Get Diagnostic Answer", key="get_diag_answer", use_container_width=True):
         if not st.session_state.google_api_key:
             st.error("Please enter your Google API Key in the sidebar to use the assistant.")
@@ -1151,8 +1111,24 @@ if faiss_index and all_chunks:
                     # Configure the generative model with the tool
                     model = genai.GenerativeModel(
                         GENERATION_MODEL,
-                        tools=[get_tune_data, query_log_file]
+                        tools=[get_tune_data, list_available_maps_tool]
                     )
+
+                    # Handle the uploaded log file for direct passing
+                    log_data_str = ""
+                    if uploaded_diag_log is not None:
+                        try:
+                            log_dataframe = pd.read_csv(uploaded_diag_log, encoding='latin1')
+                            log_data_str = f"""
+                            ---
+                            **USER-UPLOADED LOG FILE DATA:**
+                            {log_dataframe.to_string()}
+                            ---
+                            """
+                        except Exception as e:
+                            st.error(f"Could not read the log file: {e}")
+                            log_data_str = "Error: Could not read the log file."
+
 
                     # 1. Retrieve context from RAG
                     query_embedding_result = genai.embed_content(model=EMBEDDING_MODEL, content=user_query, task_type="retrieval_query")
@@ -1171,18 +1147,22 @@ if faiss_index and all_chunks:
                     Your primary goal is to provide a comprehensive and accurate answer to the user's question by acting as a detective.
 
                     **Your Process:**
-                    1.  **Analyze the user's question and the provided documentation (CONTEXT) to form an initial hypothesis.**
-                    2.  **Use your tools (`query_log_file` and `get_tune_data`) to gather evidence to prove or disprove your hypothesis.** This is an iterative process. You may need to use the tools multiple times to dig deeper. For example, you might first query the log for high fuel trims, then check the corresponding MAF scaling in the tune file.
-                    3.  **Synthesize all the evidence.** Your final answer MUST be a synthesis of information from the documentation, the log data, and the tune data. Do not rely on just one source.
-                    4.  **Formulate your final answer ONLY when you are confident you have a complete picture.** If you cannot answer because the data is missing or a tool fails, clearly state what information you are missing and why it's necessary. Do not guess.
+                    1.  **Analyze the user's question and the provided documentation and log file data (CONTEXT) to form an initial hypothesis.**
+                    2.  **If you need to look up a map from the tune file, you MUST use a two-step process:**
+                        a. **First, call the `list_available_maps_tool()`** to get a dictionary of all available maps. This dictionary maps the machine-readable title (e.g., 'mff_tia_cor') to the full description required by the next tool.
+                        b. **Second, use this dictionary to find the exact `map_description` string** for the map you need to investigate.
+                        c. **Finally, call the `get_tune_data()` tool** with the precise `map_description` string you found.
+                    3.  **Synthesize all the evidence.** Your final answer MUST be a synthesis of information from the documentation, the log data, and the tune data.
+                    4.  **Formulate your final answer ONLY when you are confident you have a complete picture.** If you cannot answer, clearly state what information you are missing.
 
                     **Available Tools:**
-                    - `query_log_file(natural_language_query: str)`: Use this to investigate specific conditions in the log file (e.g., "show me STFT and LTFT when RPM is above 4000").
-                    - `get_tune_data(map_description: str)`: Use this to look up a specific map in the user's tune file using its description string (e.g., "Base table for multiplicative fuel adaptation").
+                    - `list_available_maps_tool()`: Returns a dictionary mapping map titles to their full descriptions.
+                    - `get_tune_data(map_description: str)`: Use this to look up a specific map in the user's tune file using its exact description string.
 
                     ---
                     **CONTEXT FROM DOCUMENTATION:**
                     {context_str}
+                    {log_data_str}
                     ---
                     **USER'S QUESTION:**
                     {user_query}

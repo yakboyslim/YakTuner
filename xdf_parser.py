@@ -2,7 +2,6 @@ import xml.etree.ElementTree as ET
 import csv
 import re
 import pprint  # Used for cleanly printing the output dictionary
-import difflib
 
 
 def _sanitize_title_for_variable(title):
@@ -208,6 +207,30 @@ def parse_xdf_maps(xdf_file_path, map_list_csv_path):
         return {}
 
 
+def list_available_maps(xdf_file_path):
+    """
+    Parses an XDF file and returns a dictionary mapping sanitized map titles
+    to their full, human-readable descriptions.
+    """
+    try:
+        tree = ET.parse(xdf_file_path)
+        root = tree.getroot()
+        map_dict = {}
+        for table in root.findall('XDFTABLE'):
+            title_element = table.find('title')
+            desc_element = table.find('description')
+            if title_element is not None and title_element.text and desc_element is not None and desc_element.text:
+                title = title_element.text.strip()
+                sanitized_title = _sanitize_title_for_variable(title)
+                description = desc_element.text.strip().splitlines()[0].strip()
+                if sanitized_title and description:
+                    map_dict[sanitized_title] = description
+        return map_dict
+    except Exception as e:
+        print(f"Error listing available maps: {e}")
+        return {}
+
+
 def parse_map_by_description(xdf_file_path, map_description):
     """
     Parses an XDF file to extract a single map definition by its description.
@@ -243,13 +266,8 @@ def parse_map_by_description(xdf_file_path, map_description):
 
         table_element = description_to_table_map.get(map_description)
         if table_element is None:
-            # If no exact match, try to find the best fuzzy match
-            best_match = difflib.get_close_matches(map_description, description_to_table_map.keys(), n=1, cutoff=0.8)
-            if not best_match:
-                print(f"Error: Could not find a table with the description: '{map_description}'")
-                return {}
-            map_description = best_match[0]
-            table_element = description_to_table_map[map_description]
+            print(f"Error: Could not find a table with the exact description: '{map_description}'")
+            return {}
 
         title_element = table_element.find('title')
         if title_element is None or not title_element.text:
