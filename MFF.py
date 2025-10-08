@@ -203,7 +203,6 @@ def _calculate_mff_correction(log_data, blend_surface, old_table, mffxaxis, mffy
     recommended_table = np.round(new_table * 1024) / 1024
     return recommended_table
 
-# --- Main Orchestrator Function ---
 def run_mff_analysis(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars, tuning_mode='MFF'):
     """
     Main orchestrator for the MFF tuning process. A pure computational function.
@@ -222,6 +221,15 @@ def run_mff_analysis(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars,
     print(" -> Initializing MFF analysis...")
     params = {'confidence': 0.7}  # Hardcoded parameter
 
+    # --- FIX: Add an upfront check for an empty log ---
+    if log.empty:
+        return {
+            'status': 'Failure',
+            'warnings': ["MFF analysis failed: The input log data was empty. This is likely because upstream filters (e.g., 'state_lam' or 'OILTEMP') removed all data points before the analysis could run."],
+            'results_mff': None
+        }
+    # --- END FIX ---
+
     print(" -> Preparing MFF data from logs...")
     processed_log, warnings = _process_and_filter_mff_data(log, logvars, tuning_mode=tuning_mode)
 
@@ -230,8 +238,11 @@ def run_mff_analysis(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars,
     if additive_mode:
         warnings.append("MFF_COR not found in logs. Switching to additive correction mode.")
 
+    # --- FIX: Add a specific warning if internal filtering removes all data ---
     if processed_log.empty:
+        warnings.insert(0, "MFF analysis failed: No data remained after internal module filtering.")
         return {'status': 'Failure', 'warnings': warnings, 'results_mff': None}
+    # --- END FIX ---
 
     print(" -> Creating data bins from MFF axes...")
     log_binned = _create_bins(processed_log, mffxaxis, mffyaxis)
@@ -257,8 +268,6 @@ def run_mff_analysis(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars,
         xlabels = [str(x) for x in mffxaxis]
         ylabels = [str(y) for y in mffyaxis]
         results[f'IDX{idx}'] = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
-
-    # 3D plotting and table display are now handled by the UI (Streamlit).
 
     print(" -> MFF analysis complete.")
     return {
