@@ -505,6 +505,11 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             log_df = pd.concat((pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in uploaded_log_files),
                                ignore_index=True)
 
+            if 'OILTEMP' in log_df.columns and oil_temp_unit == 'C':
+                st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
+                log_df['OILTEMP'] = log_df['OILTEMP'] * 1.8 + 32
+                st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
+
             if not os.path.exists(default_vars):
                 raise FileNotFoundError(
                     f"Critical file missing: The default '{default_vars}' could not be found.")
@@ -514,12 +519,6 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
             # --- This is the key change: The rest of the script only runs if mapping is complete ---
             if mapped_log_df is not None:
-
-                if 'OILTEMP' in mapped_log_df.columns and oil_temp_unit == 'C':
-                    st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
-                    # Use .loc to ensure we are modifying the DataFrame directly
-                    mapped_log_df.loc[:, 'OILTEMP'] = mapped_log_df['OILTEMP'] * 1.8 + 32
-                    st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
 
                 mapped_log_df = _apply_advanced_state_lam_filter(mapped_log_df).copy()
                 # --- Phase 2: Main Analysis Pipeline ---
@@ -1044,62 +1043,57 @@ def get_tune_data(map_name: str) -> str:
         available_maps = sorted(list(all_maps.keys()))
         return f"Error: Map '{map_name}' not found. Try one of the following available maps: {', '.join(available_maps)}"
 
-# Main RAG generation function
-def generate_diag_answer(query, context, log_data=None, model=None):
-    """Generates an answer using the model, context, and optional log data."""
-    if model is None:
-        return "Error: Model not initialized.", []
 
-    context_str = "\n\n".join([f"Source: {chunk['source']}\nContent: {chunk['content']}" for chunk in context])
-
-    log_data_str = ""
-    if log_data is not None:
-        log_data_str = f"""
-        The user has also uploaded the following CSV log data for analysis:
-        ---LOG FILE DATA---
-        {log_data.to_string()}
-        --------------------
-        """
-
-    # The prompt is carefully structured to guide the model's reasoning process.
-    prompt = f"""
-    You are an expert automotive systems engineer and ECU tuner. Your knowledge comes from the ECU documentation provided in the CONTEXT.
-    You have access to tools that can read data directly from the user's uploaded tune file.
-
-    Analyze the user's QUESTION. Follow these steps:
-    1.  First, use the provided CONTEXT from the documentation to understand the system and answer the question.
-    2.  If the question requires specific values from the tune file (e.g., "what is my base timing at 4000 RPM?"), you MUST use the `get_tune_data` tool to retrieve it. Do not guess map names; use the tool to find the correct data.
-    3.  If the user has provided LOG FILE DATA, use it in your analysis to connect theory with real-world behavior.
-    4.  Formulate a comprehensive answer based *only* on the provided context, tool outputs, and log data. Be concise and precise.
-    5.  If the context and tools are insufficient to answer, clearly state that you cannot answer based on the provided information and explain what is missing.
-
-    {log_data_str}
-
-    CONTEXT FROM DOCUMENTATION:
-    ---
-    {context_str}
-    ---
-
-    QUESTION:
-    {query}
-
-    ANSWER:
+def query_log_file(natural_language_query: str) -> str:
     """
+    Accepts a natural-language query and translates it into a Pandas DataFrame query
+    to filter the user's uploaded log file. Returns the filtered data as a string.
+    This should be used to investigate specific conditions in the log file.
 
+    Args:
+        natural_language_query (str): A question in plain English about what data to find in the log.
+                                      For example: "Show me all rows where RPM is greater than 4000 and throttle is over 80%"
+
+    Returns:
+        str: The resulting data from the log file as a string-formatted DataFrame, or an error message.
+    """
+    if 'diag_log_df' not in st.session_state or st.session_state.diag_log_df is None:
+        return "Error: A log file has not been uploaded yet. Please ask the user to upload a log file first."
+
+    log_df = st.session_state.diag_log_df
+    columns_list = log_df.columns.tolist()
+
+    # Use a separate, focused model call to translate the NLQ to a Pandas query
     try:
-        # Generate content with safety settings to reduce refusals
-        response = model.generate_content(
-            prompt,
-            safety_settings={
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            }
-        )
-        return response.text, context
+        translator_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        prompt = f"""
+        You are a data analysis expert. Your task is to convert a natural language query into a Python Pandas DataFrame query string.
+        The DataFrame is named `log_df`.
+        The available columns are: {columns_list}
+
+        Analyze the user's query and return ONLY the syntactically correct Pandas query string.
+        Do not return any other text, explanation, or markdown.
+
+        Example Query: "Show me data where RPM is over 4000 and the throttle is wide open."
+        Example Output: (RPM > 4000) & (THROTTLE > 80)
+
+        User Query: "{natural_language_query}"
+        Pandas Query String:
+        """
+        response = translator_model.generate_content(prompt)
+        pandas_query_string = response.text.strip().replace('`', '')
+
+        # Execute the generated query
+        filtered_df = log_df.query(pandas_query_string)
+
+        if filtered_df.empty:
+            return "The query returned no results from the log file. Try a different query."
+        else:
+            # Return a sample to avoid overwhelming the context window
+            return f"Query Result (showing up to 20 rows):\n{filtered_df.head(20).to_string()}"
+
     except Exception as e:
-        return f"An error occurred while generating the response: {e}", context
+        return f"An error occurred while querying the log file: {e}. The generated query may have been invalid. Please try rephrasing your query."
 
 
 # --- UI for the assistant ---
@@ -1125,6 +1119,20 @@ if faiss_index and all_chunks:
     user_query = st.text_input("Enter your diagnostic question:", placeholder="e.g., What does the 'combmodes_MAF' map control?", key="rag_query")
     uploaded_diag_log = st.file_uploader("Upload a CSV data log for diagnostics (Optional)", type="csv", key="diag_log")
 
+    # Load the log data into session state as soon as it's uploaded
+    if uploaded_diag_log is not None:
+        try:
+            st.session_state.diag_log_df = pd.read_csv(uploaded_diag_log, encoding='latin1')
+            st.success(f"Log file `{uploaded_diag_log.name}` loaded and ready for the assistant.")
+        except Exception as e:
+            st.error(f"Error reading diagnostic log file: {e}")
+            st.session_state.diag_log_df = None
+    else:
+        # Clear the state if the file is removed
+        if 'diag_log_df' in st.session_state:
+            st.session_state.diag_log_df = None
+
+
     if st.button("Get Diagnostic Answer", key="get_diag_answer", use_container_width=True):
         if not st.session_state.google_api_key:
             st.error("Please enter your Google API Key in the sidebar to use the assistant.")
@@ -1139,13 +1147,8 @@ if faiss_index and all_chunks:
                     # Configure the generative model with the tool
                     model = genai.GenerativeModel(
                         GENERATION_MODEL,
-                        tools=[get_tune_data]
+                        tools=[get_tune_data, query_log_file]
                     )
-
-                    # Handle uploaded log file
-                    log_dataframe = None
-                    if uploaded_diag_log is not None:
-                        log_dataframe = pd.read_csv(uploaded_diag_log, encoding='latin1')
 
                     # 1. Retrieve context from RAG
                     query_embedding_result = genai.embed_content(model=EMBEDDING_MODEL, content=user_query, task_type="retrieval_query")
@@ -1153,16 +1156,47 @@ if faiss_index and all_chunks:
 
                     D, I = faiss_index.search(np.array([query_embedding], dtype='float32'), k=5)
                     retrieved_context = [all_chunks[i] for i in I[0]]
+                    context_str = "\n\n".join([f"Source: {chunk['source']}\nContent: {chunk['content']}" for chunk in retrieved_context])
 
-                    # 2. Generate Answer by calling the model
-                    answer, context = generate_diag_answer(user_query, retrieved_context, log_data=log_dataframe, model=model)
+                    # 2. Start the iterative reasoning loop
+                    chat = model.start_chat(enable_automatic_function_calling=True)
+
+                    # Construct the initial, detailed prompt
+                    initial_prompt = f"""
+                    You are an expert automotive systems engineer and a master diagnostician for ECUs.
+                    Your primary goal is to provide a comprehensive and accurate answer to the user's question by acting as a detective.
+
+                    **Your Process:**
+                    1.  **Analyze the user's question and the provided documentation (CONTEXT) to form an initial hypothesis.**
+                    2.  **Use your tools (`query_log_file` and `get_tune_data`) to gather evidence to prove or disprove your hypothesis.** This is an iterative process. You may need to use the tools multiple times to dig deeper. For example, you might first query the log for high fuel trims, then check the corresponding MAF scaling in the tune file.
+                    3.  **Synthesize all the evidence.** Your final answer MUST be a synthesis of information from the documentation, the log data, and the tune data. Do not rely on just one source.
+                    4.  **Formulate your final answer ONLY when you are confident you have a complete picture.** If you cannot answer because the data is missing or a tool fails, clearly state what information you are missing and why it's necessary. Do not guess.
+
+                    **Available Tools:**
+                    - `query_log_file(natural_language_query: str)`: Use this to investigate specific conditions in the log file (e.g., "show me STFT and LTFT when RPM is above 4000").
+                    - `get_tune_data(map_name: str)`: Use this to look up specific maps in the user's tune file (e.g., "MAF_Scaling_Table").
+
+                    ---
+                    **CONTEXT FROM DOCUMENTATION:**
+                    {context_str}
+                    ---
+                    **USER'S QUESTION:**
+                    {user_query}
+                    """
+
+                    # Send the message and let the model handle the tool-use loop
+                    response = chat.send_message(initial_prompt)
+                    answer = response.text
 
                     # 3. Display results
                     st.markdown("#### Assistant's Answer")
-                    st.info(answer) # Using st.info for better visual separation
+                    st.info(answer)
+
+                    with st.expander("Show Assistant's Reasoning Process (Tool Calls)"):
+                        st.json(chat.history)
 
                     with st.expander("Show Retrieved Context from Documentation"):
-                        for i, chunk in enumerate(context):
+                        for i, chunk in enumerate(retrieved_context):
                             st.markdown(f"**Source:** {chunk['source']}")
                             st.text_area("Content", chunk['content'], height=150, disabled=True, key=f"context_{i}")
 
