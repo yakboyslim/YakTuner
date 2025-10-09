@@ -4,7 +4,7 @@ from asteval import Interpreter
 import os
 import io
 
-from xdf_parser import parse_xdf_maps, parse_all_xdf_maps, parse_map_by_description
+from xdf_parser import parse_xdf_maps, parse_map_by_description
 from BinRead import read_maps_from_config
 
 

@@ -979,7 +979,7 @@ INDEX_FILE = "faiss_index.index"
 CHUNKS_FILE = "chunks.pkl"
 EMBEDDING_MODEL = 'models/text-embedding-004'
 # Use a model that supports tools and has a high context window
-GENERATION_MODEL = 'gemini-1.5-pro'
+GENERATION_MODEL = 'gemini-2.5-pro'
 
 # Load RAG data (cached)
 @st.cache_resource(show_spinner="Loading knowledge base...")
@@ -1175,7 +1175,7 @@ if faiss_index and all_chunks:
                     **Your Process:**
                     1.  **Analyze the user's question and the provided documentation and log file data (CONTEXT) to form an initial hypothesis.**
                     2.  **If you need to look up a map from the tune file, you MUST use a two-step process:**
-                        a. **First, call the `list_available_maps_tool()`** to get a dictionary of all available maps. This dictionary maps the machine-readable title (e.g., 'mff_tia_cor') to the full description required by the next tool.
+                        a. **First, call the `list_available_maps_tool()`** to get a dictionary of all available maps. This dictionary includes both a human readable title and a machine-readable title (e.g., 'mff_tia_cor'). This machine readable title, or name in the documentation, is what is required by the next tool.
                         b. **Second, use this dictionary to find the exact `map_description` string** for the map you need to investigate.
                         c. **Finally, call the `get_tune_data()` tool** with the precise `map_description` string you found.
                     3.  **Synthesize all the evidence.** Your final answer MUST be a synthesis of information from the documentation, the log data, and the tune data.
