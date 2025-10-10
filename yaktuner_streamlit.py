@@ -516,8 +516,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
 
             # --- This is the key change: The rest of the script only runs if mapping is complete ---
             if mapped_log_df is not None:
-
-              mapped_log_df = _apply_advanced_state_lam_filter(mapped_log_df).copy()
+                mapped_log_df = _apply_advanced_state_lam_filter(mapped_log_df).copy()
                 # --- Phase 2: Main Analysis Pipeline ---
                 with st.status("Starting YAKtuner analysis...", expanded=True) as status:
                     if 'updated_varconv_df' in st.session_state:

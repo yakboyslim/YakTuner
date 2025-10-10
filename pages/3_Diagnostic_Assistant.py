@@ -168,6 +168,40 @@ def _get_xdf_content():
     return None
 
 
+def render_thinking_process(history):
+    """Renders the chat history in a user-friendly format."""
+    if not history:
+        st.info("The assistant's thinking process will be shown here once a question is asked.")
+        return
+
+    for i, message in enumerate(history):
+        if message.role == "user":
+            with st.expander("Show Initial Prompt", expanded=(i == 0)):
+                # The user's prompt text is in the first part.
+                st.code(message.parts[0].text, language=None)
+
+        elif message.role == "model":
+            st.markdown("---")
+            st.markdown("##### 🧠 Assistant's Turn")
+
+            for part in message.parts:
+                if hasattr(part, 'text') and part.text:
+                    st.markdown(part.text)
+
+                if hasattr(part, 'function_call'):
+                    fc = part.function_call
+                    st.markdown("##### 📞 Tool Call")
+                    st.code(f"{fc.name}({dict(fc.args)})", language="python")
+
+        elif message.role == "tool":
+            st.markdown("---")
+            for part in message.parts:
+                if hasattr(part, 'function_response'):
+                    fr = part.function_response
+                    st.markdown(f"##### 🔧 Tool Output for `{fr.name}`")
+                    # Use a text area for potentially long outputs
+                    st.text_area("", value=str(fr.response), height=200, disabled=True, key=f"tool_{fr.name}_{i}")
+
 # --- UI for the assistant ---
 if faiss_index and all_chunks:
     # API Key Input in the sidebar for a cleaner look
@@ -193,10 +227,16 @@ if faiss_index and all_chunks:
         st.divider()
         st.header("⚙️ Assistant Settings")
 
-        # --- Firmware Selection ---
-        firmware = st.radio(
-            "Firmware Version",
-            options=ALL_FIRMWARES,
+# --- Initialize Session State for Chat ---
+if 'diag_chat_history' not in st.session_state:
+    st.session_state.diag_chat_history = []
+if 'diag_chat' not in st.session_state:
+    st.session_state.diag_chat = None
+
+    # --- Firmware Selection ---
+    firmware = st.radio(
+        "Firmware Version",
+        options=ALL_FIRMWARES,
             horizontal=True,
             help="Select your ECU's firmware. This loads the correct map definitions for the assistant.",
             key="firmware"
@@ -277,8 +317,16 @@ if faiss_index and all_chunks:
                     retrieved_context = [all_chunks[i] for i in I[0]]
                     context_str = "\n\n".join([f"Source: {chunk['source']}\nContent: {chunk['content']}" for chunk in retrieved_context])
 
-                    # 2. Start the iterative reasoning loop
-                    chat = model.start_chat(enable_automatic_function_calling=True)
+                    # 2. Start or continue the iterative reasoning loop
+                    # If a chat is not already in the session state, start a new one.
+                    # This also allows the user to start a new chat if a previous one errored out.
+                    if st.session_state.diag_chat is None:
+                        st.info("Starting a new diagnostic session...")
+                        st.session_state.diag_chat = model.start_chat(enable_automatic_function_calling=True)
+                        # Clear history for the new session
+                        st.session_state.diag_chat_history = []
+
+                    chat = st.session_state.diag_chat
 
                     # Construct the initial, detailed prompt
                     initial_prompt = f'''
@@ -309,14 +357,14 @@ if faiss_index and all_chunks:
 
                     # Send the message and let the model handle the tool-use loop
                     response = chat.send_message(initial_prompt)
+                    st.session_state.diag_chat_history = chat.history # Save history on success
                     answer = response.text
 
                     # 3. Display results
                     st.markdown("#### Assistant's Answer")
                     st.info(answer)
 
-                    with st.expander("Show Assistant's Reasoning Process (Tool Calls)"):
-                        st.json(chat.history)
+                    # The history is now rendered below, outside this block.
 
                     with st.expander("Show Retrieved Context from Documentation"):
                         for i, chunk in enumerate(retrieved_context):
@@ -324,8 +372,23 @@ if faiss_index and all_chunks:
                             st.text_area("Content", chunk['content'], height=150, disabled=True, key=f"context_{i}")
 
                 except Exception as e:
+                    # CRUCIAL: Also persist history on failure to allow for debugging
+                    if st.session_state.diag_chat:
+                        st.session_state.diag_chat_history = st.session_state.diag_chat.history
+
                     st.error(f"An error occurred with the generative model: {e}")
-                    st.error("Please check your API key, ensure it is valid, and that the model name is correct.")
+                    st.error("The conversation history up to the point of error has been saved. You can view it in the 'Thinking Process' expander below.")
+
+                    # Reset chat on error to allow the user to start a new, fresh session
+                    st.session_state.diag_chat = None
+
+    # --- Display the thinking process ---
+    # This is placed outside the button's "if" block so it always shows
+    # the history from the session state, even after an error and rerun.
+    st.subheader("3. Assistant's Thinking Process")
+    with st.expander("Show/Hide the detailed reasoning process", expanded=True):
+        render_thinking_process(st.session_state.diag_chat_history)
+
 else:
     st.warning("Could not load the knowledge base. The Diagnostic Assistant is unavailable.")
     st.info("Please run `build_rag_index.py` from the command line to create the necessary index files.")
