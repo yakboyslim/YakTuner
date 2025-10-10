@@ -203,7 +203,6 @@ def _calculate_mff_correction(log_data, blend_surface, old_table, mffxaxis, mffy
     recommended_table = np.round(new_table * 1024) / 1024
     return recommended_table
 
-# --- Main Orchestrator Function ---
 def run_mff_analysis(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars, tuning_mode='MFF'):
     """
     Main orchestrator for the MFF tuning process. A pure computational function.
@@ -257,8 +256,6 @@ def run_mff_analysis(log, mffxaxis, mffyaxis, mfftables, combmodes_MFF, logvars,
         xlabels = [str(x) for x in mffxaxis]
         ylabels = [str(y) for y in mffyaxis]
         results[f'IDX{idx}'] = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
-
-    # 3D plotting and table display are now handled by the UI (Streamlit).
 
     print(" -> MFF analysis complete.")
     return {

@@ -174,7 +174,6 @@ def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafy
     recommended_table = np.round(new_table * 5.12) / 5.12
     return recommended_table
 
-# --- Main Orchestrator Function ---
 def run_maf_analysis(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars):
     """
     Main orchestrator for the MAF tuning process. A pure computational function.
@@ -226,8 +225,6 @@ def run_maf_analysis(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars)
         xlabels = [str(x) for x in mafxaxis]
         ylabels = [str(y) for y in mafyaxis]
         results[f'IDX{idx}'] = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
-
-    # 3D plotting and table display are now handled by the UI (Streamlit).
 
     print(" -> MAF analysis complete.")
     return {
