@@ -202,40 +202,39 @@ def render_thinking_process(history):
                     # Use a text area for potentially long outputs
                     st.text_area("", value=str(fr.response), height=200, disabled=True, key=f"tool_{fr.name}_{i}")
 
-# --- UI for the assistant ---
-if faiss_index and all_chunks:
-    # API Key Input in the sidebar for a cleaner look
-    with st.sidebar:
-        st.divider()
-        st.subheader("💡 Assistant API Key")
-        if 'google_api_key' not in st.session_state:
-            st.session_state.google_api_key = ''
+# --- UI FOR THE ASSISTANT ---
 
-        api_key_input = st.text_input(
-            "Enter Google API Key",
-            type="password",
-            key="api_key_input",
-            value=st.session_state.google_api_key,
-            help="Your key is used to power the Diagnostic Assistant. It is not stored or shared."
-        )
-        if api_key_input:
-            st.session_state.google_api_key = api_key_input
+# --- Sidebar ---
+with st.sidebar:
+    st.divider()
+    st.subheader("💡 Assistant API Key")
+    if 'google_api_key' not in st.session_state:
+        st.session_state.google_api_key = ''
 
-        st.divider()
-        st.page_link("yaktuner_streamlit.py", label="Main YAKtuner Analysis", icon="📈")
+    api_key_input = st.text_input(
+        "Enter Google API Key",
+        type="password",
+        key="api_key_input",
+        value=st.session_state.google_api_key,
+        help="Your key is used to power the Diagnostic Assistant. It is not stored or shared."
+    )
+    if api_key_input:
+        st.session_state.google_api_key = api_key_input
 
-        st.divider()
-        st.header("⚙️ Assistant Settings")
+    st.divider()
+    st.page_link("yaktuner_streamlit.py", label="Main YAKtuner Analysis", icon="📈")
 
-        # --- Firmware Selection ---
-        firmware = st.radio(
-            "Firmware Version",
-            options=ALL_FIRMWARES,
-            horizontal=True,
-            help="Select your ECU's firmware. This loads the correct map definitions for the assistant.",
-            key="firmware"
-        )
+    st.divider()
+    st.header("⚙️ Assistant Settings")
 
+    # --- Firmware Selection ---
+    firmware = st.radio(
+        "Firmware Version",
+        options=ALL_FIRMWARES,
+        horizontal=True,
+        help="Select your ECU's firmware. This loads the correct map definitions for the assistant.",
+        key="firmware"
+    )
 
 # --- Initialize Session State for Chat ---
 if 'diag_chat_history' not in st.session_state:
@@ -243,152 +242,124 @@ if 'diag_chat_history' not in st.session_state:
 if 'diag_chat' not in st.session_state:
     st.session_state.diag_chat = None
 
-    # --- Main Area for File Uploads & Chat ---
-    st.subheader("1. Upload Tune & Log Files")
-    uploaded_bin_file = st.file_uploader(
-        "Upload .bin tune file",
-        type=['bin', 'all'],
-        key="uploaded_bin_file_assistant",
-        help="Upload your tune file. The assistant needs this to answer questions about your maps."
+# --- Main Area for File Uploads & Chat ---
+st.subheader("1. Upload Tune & Log Files")
+uploaded_bin_file = st.file_uploader(
+    "Upload .bin tune file",
+    type=['bin', 'all'],
+    key="uploaded_bin_file_assistant",
+    help="Upload your tune file. The assistant needs this to answer questions about your maps."
+)
+if uploaded_bin_file:
+    st.session_state.bin_content = uploaded_bin_file.getvalue()
+
+uploaded_xdf_file = None
+if firmware == 'Other':
+    st.info("Since you selected 'Other' firmware, you must provide an XDF file.")
+    uploaded_xdf_file = st.file_uploader(
+        "Upload .xdf definition file",
+        type=['xdf'],
+        key="uploaded_xdf_file_assistant",
+        help="Upload the XDF definition file corresponding to your tune."
     )
-    # Store bin content in session state when uploaded
-    if uploaded_bin_file:
-        st.session_state.bin_content = uploaded_bin_file.getvalue()
+    if uploaded_xdf_file:
+        st.session_state.xdf_content = uploaded_xdf_file.getvalue()
 
-    uploaded_xdf_file = None
-    if firmware == 'Other':
-        st.info("Since you selected 'Other' firmware, you must provide an XDF file.")
-        uploaded_xdf_file = st.file_uploader(
-            "Upload .xdf definition file",
-            type=['xdf'],
-            key="uploaded_xdf_file_assistant",
-            help="Upload the XDF definition file corresponding to your tune."
-        )
-        # Store XDF content in session state when uploaded
-        if uploaded_xdf_file:
-            st.session_state.xdf_content = uploaded_xdf_file.getvalue()
+st.subheader("2. Ask Your Question")
+user_query = st.text_input("Enter your diagnostic question:", placeholder="e.g., What does the 'combmodes_MAF' map control?", key="rag_query")
+uploaded_diag_log = st.file_uploader("Upload a CSV data log for diagnostics (Optional)", type="csv", key="diag_log")
 
-    st.subheader("2. Ask Your Question")
-    user_query = st.text_input("Enter your diagnostic question:", placeholder="e.g., What does the 'combmodes_MAF' map control?", key="rag_query")
-    uploaded_diag_log = st.file_uploader("Upload a CSV data log for diagnostics (Optional)", type="csv", key="diag_log")
+# --- Main Logic Block ---
+if st.button("Get Diagnostic Answer", key="get_diag_answer", use_container_width=True):
+    # --- Input Validation ---
+    if not st.session_state.google_api_key:
+        st.error("Please enter your Google API Key in the sidebar to use the assistant.")
+    elif not uploaded_bin_file:
+        st.error("Please upload your .bin tune file first.")
+    elif firmware == 'Other' and not uploaded_xdf_file:
+        st.error("Please upload the corresponding XDF file for your 'Other' firmware tune.")
+    elif not user_query:
+        st.warning("Please enter a question.")
+    elif not faiss_index or not all_chunks:
+        st.error("The knowledge base is not loaded. Cannot proceed. Please ensure the index files are present and valid.")
+    else:
+        # --- All checks passed, proceed with the generative AI logic ---
+        with st.spinner("Calling the assistant... This may take a moment."):
+            try:
+                genai.configure(api_key=st.session_state.google_api_key)
+                model = genai.GenerativeModel(GENERATION_MODEL, tools=[get_tune_data, list_available_maps_tool])
 
-    if st.button("Get Diagnostic Answer", key="get_diag_answer", use_container_width=True):
-        if not st.session_state.google_api_key:
-            st.error("Please enter your Google API Key in the sidebar to use the assistant.")
-        elif not uploaded_bin_file:
-            st.error("Please upload your .bin tune file first.")
-        elif firmware == 'Other' and not uploaded_xdf_file:
-            st.error("Please upload the corresponding XDF file for your 'Other' firmware tune.")
-        elif not user_query:
-            st.warning("Please enter a question.")
-        else:
-            with st.spinner("Calling the assistant... This may take a moment."):
-                try:
-                    # Configure the API key
-                    genai.configure(api_key=st.session_state.google_api_key)
+                log_data_str = ""
+                if uploaded_diag_log is not None:
+                    try:
+                        log_dataframe = pd.read_csv(uploaded_diag_log, encoding='latin1')
+                        log_data_str = f'--- **USER-UPLOADED LOG FILE DATA:**\n{log_dataframe.to_string()}\n---'
+                    except Exception as e:
+                        st.error(f"Could not read the log file: {e}")
+                        log_data_str = "Error: Could not read the log file."
 
-                    # Configure the generative model with the tool
-                    model = genai.GenerativeModel(
-                        GENERATION_MODEL,
-                        tools=[get_tune_data, list_available_maps_tool]
-                    )
+                query_embedding_result = genai.embed_content(model=EMBEDDING_MODEL, content=user_query, task_type="retrieval_query")
+                query_embedding = query_embedding_result['embedding']
 
-                    # Handle the uploaded log file for direct passing
-                    log_data_str = ""
-                    if uploaded_diag_log is not None:
-                        try:
-                            log_dataframe = pd.read_csv(uploaded_diag_log, encoding='latin1')
-                            log_data_str = f'''
-                            ---
-                            **USER-UPLOADED LOG FILE DATA:**
-                            {log_dataframe.to_string()}
-                            ---
-                            '''
-                        except Exception as e:
-                            st.error(f"Could not read the log file: {e}")
-                            log_data_str = "Error: Could not read the log file."
+                D, I = faiss_index.search(np.array([query_embedding], dtype='float32'), k=5)
+                retrieved_context = [all_chunks[i] for i in I[0]]
+                context_str = "\n\n".join([f"Source: {chunk['source']}\nContent: {chunk['content']}" for chunk in retrieved_context])
 
+                if st.session_state.diag_chat is None:
+                    st.info("Starting a new diagnostic session...")
+                    st.session_state.diag_chat = model.start_chat(enable_automatic_function_calling=True)
+                    st.session_state.diag_chat_history = []
 
-                    # 1. Retrieve context from RAG
-                    query_embedding_result = genai.embed_content(model=EMBEDDING_MODEL, content=user_query, task_type="retrieval_query")
-                    query_embedding = query_embedding_result['embedding']
+                chat = st.session_state.diag_chat
+                initial_prompt = f'''
+                You are an expert automotive systems engineer and a master diagnostician for ECUs.
+                Your primary goal is to provide a comprehensive and accurate answer to the user's question by acting as a detective.
 
-                    D, I = faiss_index.search(np.array([query_embedding], dtype='float32'), k=5)
-                    retrieved_context = [all_chunks[i] for i in I[0]]
-                    context_str = "\n\n".join([f"Source: {chunk['source']}\nContent: {chunk['content']}" for chunk in retrieved_context])
+                **Your Process:**
+                1.  **Analyze the user's question and the provided documentation and log file data (CONTEXT) to form an initial hypothesis.**
+                2.  **If you need to look up a map from the tune file, you MUST use a two-step process:**
+                    a. **First, call the `list_available_maps_tool()`** to get a dictionary of all available maps.
+                    b. **Second, use this dictionary to find the exact `map_description` string** for the map you need to investigate.
+                    c. **Finally, call the `get_tune_data()` tool** with the precise `map_description`.
+                3.  **Synthesize all the evidence.** Your final answer MUST be a synthesis of information from the documentation, the log data, and the tune data.
+                4.  **Formulate your final answer ONLY when you are confident you have a complete picture.**
 
-                    # 2. Start or continue the iterative reasoning loop
-                    # If a chat is not already in the session state, start a new one.
-                    # This also allows the user to start a new chat if a previous one errored out.
-                    if st.session_state.diag_chat is None:
-                        st.info("Starting a new diagnostic session...")
-                        st.session_state.diag_chat = model.start_chat(enable_automatic_function_calling=True)
-                        # Clear history for the new session
-                        st.session_state.diag_chat_history = []
+                **Available Tools:**
+                - `list_available_maps_tool()`: Returns a dictionary mapping map titles to their full descriptions.
+                - `get_tune_data(map_description: str)`: Use this to look up a specific map.
 
-                    chat = st.session_state.diag_chat
+                ---
+                **CONTEXT FROM DOCUMENTATION:**
+                {context_str}
+                {log_data_str}
+                ---
+                **USER'S QUESTION:**
+                {user_query}
+                '''
+                response = chat.send_message(initial_prompt)
+                st.session_state.diag_chat_history = chat.history
+                answer = response.text
 
-                    # Construct the initial, detailed prompt
-                    initial_prompt = f'''
-                    You are an expert automotive systems engineer and a master diagnostician for ECUs.
-                    Your primary goal is to provide a comprehensive and accurate answer to the user's question by acting as a detective.
+                st.markdown("#### Assistant's Answer")
+                st.info(answer)
 
-                    **Your Process:**
-                    1.  **Analyze the user's question and the provided documentation and log file data (CONTEXT) to form an initial hypothesis.**
-                    2.  **If you need to look up a map from the tune file, you MUST use a two-step process:**
-                        a. **First, call the `list_available_maps_tool()`** to get a dictionary of all available maps. This dictionary includes both a human readable title and a machine-readable title (e.g., 'mff_tia_cor'). This machine readable title, or name in the documentation, is what is required by the next tool.
-                        b. **Second, use this dictionary to find the exact `map_description` string** for the map you need to investigate.
-                        c. **Finally, call the `get_tune_data()` tool** with the precise `map_description` string you found.
-                    3.  **Synthesize all the evidence.** Your final answer MUST be a synthesis of information from the documentation, the log data, and the tune data.
-                    4.  **Formulate your final answer ONLY when you are confident you have a complete picture.** If you cannot answer, clearly state what information you are missing.
+                with st.expander("Show Retrieved Context from Documentation"):
+                    for i, chunk in enumerate(retrieved_context):
+                        st.markdown(f"**Source:** {chunk['source']}")
+                        st.text_area("Content", chunk['content'], height=150, disabled=True, key=f"context_{i}")
 
-                    **Available Tools:**
-                    - `list_available_maps_tool()`: Returns a dictionary mapping map titles to their full descriptions.
-                    - `get_tune_data(map_description: str)`: Use this to look up a specific map in the user's tune file using its exact description string.
+            except Exception as e:
+                if st.session_state.diag_chat:
+                    st.session_state.diag_chat_history = st.session_state.diag_chat.history
+                st.error(f"An error occurred with the generative model: {e}")
+                st.error("The conversation history up to the point of error has been saved. You can view it in the 'Thinking Process' expander below.")
+                st.session_state.diag_chat = None
 
-                    ---
-                    **CONTEXT FROM DOCUMENTATION:**
-                    {context_str}
-                    {log_data_str}
-                    ---
-                    **USER'S QUESTION:**
-                    {user_query}
-                    '''
-
-                    # Send the message and let the model handle the tool-use loop
-                    response = chat.send_message(initial_prompt)
-                    st.session_state.diag_chat_history = chat.history # Save history on success
-                    answer = response.text
-
-                    # 3. Display results
-                    st.markdown("#### Assistant's Answer")
-                    st.info(answer)
-
-                    # The history is now rendered below, outside this block.
-
-                    with st.expander("Show Retrieved Context from Documentation"):
-                        for i, chunk in enumerate(retrieved_context):
-                            st.markdown(f"**Source:** {chunk['source']}")
-                            st.text_area("Content", chunk['content'], height=150, disabled=True, key=f"context_{i}")
-
-                except Exception as e:
-                    # CRUCIAL: Also persist history on failure to allow for debugging
-                    if st.session_state.diag_chat:
-                        st.session_state.diag_chat_history = st.session_state.diag_chat.history
-
-                    st.error(f"An error occurred with the generative model: {e}")
-                    st.error("The conversation history up to the point of error has been saved. You can view it in the 'Thinking Process' expander below.")
-
-                    # Reset chat on error to allow the user to start a new, fresh session
-                    st.session_state.diag_chat = None
-
-    # --- Display the thinking process ---
-    # This is placed outside the button's "if" block so it always shows
-    # the history from the session state, even after an error and rerun.
-    st.subheader("3. Assistant's Thinking Process")
-    with st.expander("Show/Hide the detailed reasoning process", expanded=True):
-        render_thinking_process(st.session_state.diag_chat_history)
-
-else:
+# --- Display Warnings or Thinking Process ---
+if not faiss_index or not all_chunks:
     st.warning("Could not load the knowledge base. The Diagnostic Assistant is unavailable.")
     st.info("Please run `build_rag_index.py` from the command line to create the necessary index files.")
+
+st.subheader("3. Assistant's Thinking Process")
+with st.expander("Show/Hide the detailed reasoning process", expanded=True):
+    render_thinking_process(st.session_state.diag_chat_history)
