@@ -227,21 +227,21 @@ if faiss_index and all_chunks:
         st.divider()
         st.header("⚙️ Assistant Settings")
 
-# --- Initialize Session State for Chat ---
-if 'diag_chat_history' not in st.session_state:
-    st.session_state.diag_chat_history = []
-if 'diag_chat' not in st.session_state:
-    st.session_state.diag_chat = None
-
-    # --- Firmware Selection ---
-    firmware = st.radio(
-        "Firmware Version",
-        options=ALL_FIRMWARES,
+        # --- Firmware Selection ---
+        firmware = st.radio(
+            "Firmware Version",
+            options=ALL_FIRMWARES,
             horizontal=True,
             help="Select your ECU's firmware. This loads the correct map definitions for the assistant.",
             key="firmware"
         )
 
+
+# --- Initialize Session State for Chat ---
+if 'diag_chat_history' not in st.session_state:
+    st.session_state.diag_chat_history = []
+if 'diag_chat' not in st.session_state:
+    st.session_state.diag_chat = None
 
     # --- Main Area for File Uploads & Chat ---
     st.subheader("1. Upload Tune & Log Files")
