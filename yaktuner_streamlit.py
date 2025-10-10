@@ -16,14 +16,20 @@ from scipy import interpolate
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # --- Import the custom tuning modules ---
+import google.generativeai as genai
+import faiss
+import pickle
+import fitz  # PyMuPDF
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from WG import run_wg_analysis
 from LPFP import run_lpfp_analysis
 from MAF import run_maf_analysis
 from MFF import run_mff_analysis
 from KNK import run_knk_analysis
 from TTA_ATT import run_tta_att_analysis
-from tuning_loader import TuningData
+from tuning_loader import TuningData, read_map_by_description
 from error_reporter import send_to_google_sheets
+from xdf_parser import list_available_maps
 
 # --- Constants ---
 default_vars = "variables.csv"
@@ -102,6 +108,7 @@ with st.sidebar:
 
     st.divider()
     st.page_link("pages/2_PID_Downloads.py", label="PID Lists for Download", icon="📄")
+    st.page_link("pages/3_Diagnostic_Assistant.py", label="💡 Interactive Diagnostic Assistant", icon="💡")
 
     st.divider()
 
@@ -354,7 +361,10 @@ def load_all_maps_streamlit(bin_content, xdf_content, xdf_name, firmware_setting
             with tempfile.NamedTemporaryFile(delete=False, suffix=".xdf") as tmp_xdf:
                 tmp_xdf.write(xdf_content)
                 tmp_xdf_path = tmp_xdf.name
+
+            # Load the standard maps required for YAKtuner's core functions
             loader.load_from_xdf(tmp_xdf_path, XDF_MAP_LIST_CSV)
+
         except Exception as e:
             st.error(f"Failed to parse XDF file.")
             st.exception(e)
@@ -492,6 +502,11 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             log_df = pd.concat((pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in uploaded_log_files),
                                ignore_index=True)
 
+            if 'OILTEMP' in log_df.columns and oil_temp_unit == 'C':
+                st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
+                log_df['OILTEMP'] = log_df['OILTEMP'] * 1.8 + 32
+                st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
+
             if not os.path.exists(default_vars):
                 raise FileNotFoundError(
                     f"Critical file missing: The default '{default_vars}' could not be found.")
@@ -502,13 +517,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             # --- This is the key change: The rest of the script only runs if mapping is complete ---
             if mapped_log_df is not None:
 
-                if 'OILTEMP' in mapped_log_df.columns and oil_temp_unit == 'C':
-                    st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
-                    # Use .loc to ensure we are modifying the DataFrame directly
-                    mapped_log_df.loc[:, 'OILTEMP'] = mapped_log_df['OILTEMP'] * 1.8 + 32
-                    st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
-
-                mapped_log_df = _apply_advanced_state_lam_filter(mapped_log_df).copy()
+              mapped_log_df = _apply_advanced_state_lam_filter(mapped_log_df).copy()
                 # --- Phase 2: Main Analysis Pipeline ---
                 with st.status("Starting YAKtuner analysis...", expanded=True) as status:
                     if 'updated_varconv_df' in st.session_state:

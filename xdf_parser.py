@@ -4,6 +4,21 @@ import re
 import pprint  # Used for cleanly printing the output dictionary
 
 
+def _sanitize_title_for_variable(title):
+    """Sanitizes a map title to be a valid variable name."""
+    if not title:
+        return None
+    # Replace common separators with underscore
+    s = re.sub(r'[\s/\\-]', '_', title)
+    # Remove any characters that are not alphanumeric or underscore
+    s = re.sub(r'[^a-zA-Z0-9_]', '', s)
+    # Remove leading/trailing underscores
+    s = s.strip('_')
+    # Prevent multiple underscores
+    s = re.sub(r'__+', '_', s)
+    return s
+
+
 def _parse_single_table(variable_name, description, description_to_table_map, base_offset, results_dict):
     """
     Parses a single XDFTABLE, extracts its data, and recursively parses its axes.
@@ -191,3 +206,94 @@ def parse_xdf_maps(xdf_file_path, map_list_csv_path):
         print(f"An unexpected error occurred: {e}")
         return {}
 
+
+def list_available_maps(xdf_file_path):
+    """
+    Parses an XDF file and returns a dictionary mapping sanitized map titles
+    to their full, human-readable descriptions.
+    """
+    try:
+        tree = ET.parse(xdf_file_path)
+        root = tree.getroot()
+        map_dict = {}
+        for table in root.findall('XDFTABLE'):
+            title_element = table.find('title')
+            desc_element = table.find('description')
+            if title_element is not None and title_element.text and desc_element is not None and desc_element.text:
+                title = title_element.text.strip()
+                sanitized_title = _sanitize_title_for_variable(title)
+                description = desc_element.text.strip().splitlines()[0].strip()
+                if sanitized_title and description:
+                    map_dict[sanitized_title] = description
+        return map_dict
+    except Exception as e:
+        print(f"Error listing available maps: {e}")
+        return {}
+
+
+def parse_map_by_description(xdf_file_path, map_description):
+    """
+    Parses an XDF file to extract a single map definition by its description.
+    This function finds a specific map by its description text, extracts its
+    parameters, and also parses any linked axis tables.
+    Args:
+        xdf_file_path (str): The path to the .xdf file.
+        map_description (str): The exact first line of the description for the map to find.
+    Returns:
+        dict: A dictionary containing the parsed parameters for the requested map
+              and its axes. Returns an empty dictionary if parsing fails or the
+              map is not found.
+    """
+    try:
+        # --- 1. Parse the XDF file and get the root ---
+        tree = ET.parse(xdf_file_path)
+        root = tree.getroot()
+
+        # --- 2. Extract the base offset from the header ---
+        base_offset_element = root.find('XDFHEADER/BASEOFFSET')
+        base_offset = int(base_offset_element.get('offset'), 16) if base_offset_element is not None else 0
+
+        # --- 3. Build a fast lookup map from description to table element ---
+        description_to_table_map = {}
+        for table in root.findall('XDFTABLE'):
+            desc_element = table.find('description')
+            if desc_element is not None and desc_element.text and desc_element.text.strip():
+                first_line = desc_element.text.strip().splitlines()[0].strip()
+                description_to_table_map[first_line] = table
+
+        # --- 4. Find the requested map and parse it ---
+        results_dict = {}
+
+        table_element = description_to_table_map.get(map_description)
+        if table_element is None:
+            print(f"Error: Could not find a table with the exact description: '{map_description}'")
+            return {}
+
+        title_element = table_element.find('title')
+        if title_element is None or not title_element.text:
+            print(f"Warning: Table with description '{map_description}' has no title. Cannot create variable name.")
+            return {}
+
+        variable_name = _sanitize_title_for_variable(title_element.text.strip())
+        if not variable_name:
+            return {}
+
+        _parse_single_table(
+            variable_name=variable_name,
+            description=map_description,
+            description_to_table_map=description_to_table_map,
+            base_offset=base_offset,
+            results_dict=results_dict
+        )
+
+        return results_dict
+
+    except FileNotFoundError:
+        print(f"Error: XDF file not found at '{xdf_file_path}'")
+        return {}
+    except ET.ParseError as e:
+        print(f"Error: Failed to parse XML in '{xdf_file_path}'. Details: {e}")
+        return {}
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return {}

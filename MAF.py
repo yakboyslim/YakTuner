@@ -191,16 +191,6 @@ def run_maf_analysis(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars)
     print(" -> Initializing MAF analysis...")
     params = {'confidence': 0.6} # Hardcoded parameter
 
-    # --- FIX: Add an upfront check for an empty log ---
-    # This immediately identifies if upstream filters (like state_lam) removed all data.
-    if log.empty:
-        return {
-            'status': 'Failure',
-            'warnings': ["MAF analysis failed: The input log data was empty. This is likely because upstream filters (e.g., 'state_lam' or 'OILTEMP') removed all data points before the analysis could run."],
-            'results_maf': None
-        }
-    # --- END FIX ---
-
     print(" -> Preparing MAF data from logs...")
     processed_log, warnings = _process_and_filter_maf_data(log, logvars)
 
@@ -209,12 +199,8 @@ def run_maf_analysis(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars)
     if additive_mode:
         warnings.append("MAF_COR not found in logs. Switching to additive correction mode.")
 
-    # --- FIX: Add a specific warning if internal filtering removes all data ---
     if processed_log.empty:
-        # Prepend the critical warning so it appears first in the UI.
-        warnings.insert(0, "MAF analysis failed: No data remained after internal module filtering (e.g., MAP variable check).")
         return {'status': 'Failure', 'warnings': warnings, 'results_maf': None}
-    # --- END FIX ---
 
     print(" -> Creating data bins from MAF axes...")
     log_binned = _create_bins(processed_log, mafxaxis, mafyaxis)
