@@ -188,7 +188,7 @@ if faiss_index and all_chunks:
             st.session_state.google_api_key = api_key_input
 
         st.divider()
-        st.page_link("YAKtuner.py", label="Main YAKtuner Analysis", icon="📈")
+        st.page_link("yaktuner_streamlit.py", label="Main YAKtuner Analysis", icon="📈")
 
         st.divider()
         st.header("⚙️ Assistant Settings")
@@ -201,8 +201,7 @@ if faiss_index and all_chunks:
             help="Select your ECU's firmware. This loads the correct map definitions for the assistant.",
             key="firmware"
         )
-        # Store firmware choice in session state so tools can access it
-        st.session_state.firmware = firmware
+
 
     # --- Main Area for File Uploads & Chat ---
     st.subheader("1. Upload Tune & Log Files")
