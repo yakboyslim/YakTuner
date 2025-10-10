@@ -43,7 +43,7 @@ INDEX_FILE = "faiss_index.index"
 CHUNKS_FILE = "chunks.pkl"
 EMBEDDING_MODEL = 'models/text-embedding-004'
 # Use a model that supports tools and has a high context window
-GENERATION_MODEL = 'gemini-1.5-pro-latest'
+GENERATION_MODEL = 'gemini-2.5-pro'
 
 # Load RAG data (cached)
 @st.cache_resource(show_spinner="Loading knowledge base...")
@@ -259,12 +259,12 @@ if faiss_index and all_chunks:
                     if uploaded_diag_log is not None:
                         try:
                             log_dataframe = pd.read_csv(uploaded_diag_log, encoding='latin1')
-                            log_data_str = f\"\"\"
+                            log_data_str = f'''
                             ---
                             **USER-UPLOADED LOG FILE DATA:**
                             {log_dataframe.to_string()}
                             ---
-                            \"\"\"
+                            '''
                         except Exception as e:
                             st.error(f"Could not read the log file: {e}")
                             log_data_str = "Error: Could not read the log file."
@@ -282,7 +282,7 @@ if faiss_index and all_chunks:
                     chat = model.start_chat(enable_automatic_function_calling=True)
 
                     # Construct the initial, detailed prompt
-                    initial_prompt = f\"\"\"
+                    initial_prompt = f'''
                     You are an expert automotive systems engineer and a master diagnostician for ECUs.
                     Your primary goal is to provide a comprehensive and accurate answer to the user's question by acting as a detective.
 
@@ -306,7 +306,7 @@ if faiss_index and all_chunks:
                     ---
                     **USER'S QUESTION:**
                     {user_query}
-                    \"\"\"
+                    '''
 
                     # Send the message and let the model handle the tool-use loop
                     response = chat.send_message(initial_prompt)
