@@ -22,7 +22,7 @@ from google.api_core import exceptions as google_exceptions
 import faiss
 import pickle
 import fitz  # PyMuPDF
-from google.generativeai.types import HarmCategory, HarmBlockThreshold, Content, Part
+from google.generativeai.types import Tool
 from tuning_loader import TuningData, read_map_by_description
 from xdf_parser import list_available_maps
 
@@ -192,7 +192,8 @@ def render_thinking_process(history):
                 if hasattr(part, 'function_call'):
                     fc = part.function_call
                     st.markdown("##### 📞 Tool Call")
-                    st.code(f"{fc.name}({dict(fc.args)})", language="python")
+                    args_str = dict(fc.args) if fc.args else ""
+                    st.code(f"{fc.name}({args_str})", language="python")
 
         elif message.role == "tool":
             st.markdown("---")
