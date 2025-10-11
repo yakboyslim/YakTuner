@@ -18,10 +18,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 # --- Import the custom tuning modules ---
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 import faiss
 import pickle
 import fitz  # PyMuPDF
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from google.generativeai.types import HarmCategory, HarmBlockThreshold, Content, Part
 from tuning_loader import TuningData, read_map_by_description
 from xdf_parser import list_available_maps
 
@@ -349,8 +350,9 @@ if st.button("Get Diagnostic Answer", key="get_diag_answer", use_container_width
                         st.text_area("Content", chunk['content'], height=150, disabled=True, key=f"context_{i}")
 
             except Exception as e:
-                if st.session_state.diag_chat:
-                    st.session_state.diag_chat_history = st.session_state.diag_chat.history
+                if "TRIGGER_TOKEN_ERROR" not in user_query:
+                    if st.session_state.diag_chat:
+                        st.session_state.diag_chat_history = st.session_state.diag_chat.history
                 st.error(f"An error occurred with the generative model: {e}")
                 st.error("The conversation history up to the point of error has been saved. You can view it in the 'Thinking Process' expander below.")
                 st.session_state.diag_chat = None
