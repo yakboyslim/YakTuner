@@ -285,26 +285,30 @@ if st.button("Get Diagnostic Answer", key="get_diag_answer", use_container_width
         st.error("The knowledge base is not loaded. Cannot proceed. Please ensure the index files are present and valid.")
     else:
         # --- All checks passed, proceed with the generative AI logic ---
-        with st.spinner("Calling the assistant... This may take a moment."):
+        with st.status("Initializing...", expanded=True) as status:
             try:
                 genai.configure(api_key=st.session_state.google_api_key)
                 model = genai.GenerativeModel(GENERATION_MODEL, tools=[get_tune_data, list_available_maps_tool])
 
+                status.update(label="Processing uploaded log file...")
                 log_data_str = ""
                 if uploaded_diag_log is not None:
                     try:
                         log_dataframe = pd.read_csv(uploaded_diag_log, encoding='latin1')
                         log_data_str = f'--- **USER-UPLOADED LOG FILE DATA:**\n{log_dataframe.to_string()}\n---'
+                        status.update(label="Log file processed successfully.")
                     except Exception as e:
                         st.error(f"Could not read the log file: {e}")
                         log_data_str = "Error: Could not read the log file."
 
+                status.update(label="Retrieving context from knowledge base (RAG)...")
                 query_embedding_result = genai.embed_content(model=EMBEDDING_MODEL, content=user_query, task_type="retrieval_query")
                 query_embedding = query_embedding_result['embedding']
 
                 D, I = faiss_index.search(np.array([query_embedding], dtype='float32'), k=5)
                 retrieved_context = [all_chunks[i] for i in I[0]]
                 context_str = "\n\n".join([f"Source: {chunk['source']}\nContent: {chunk['content']}" for chunk in retrieved_context])
+                status.update(label="Knowledge base context retrieved.")
 
                 if st.session_state.diag_chat is None:
                     st.info("Starting a new diagnostic session...")
@@ -337,12 +341,14 @@ if st.button("Get Diagnostic Answer", key="get_diag_answer", use_container_width
                 **USER'S QUESTION:**
                 {user_query}
                 '''
+                status.update(label="Sending request to the generative model...")
                 response = chat.send_message(initial_prompt)
                 st.session_state.diag_chat_history = chat.history
                 answer = response.text
 
                 st.markdown("#### Assistant's Answer")
                 st.info(answer)
+                status.update(label="Response received.", state="complete", expanded=False)
 
                 with st.expander("Show Retrieved Context from Documentation"):
                     for i, chunk in enumerate(retrieved_context):
