@@ -10,8 +10,6 @@
 *.pyc
 *.pyc
 /.idea
-/Combined_Descriptions
-/Split_Chapters
 .env
 .idea/workspace.xml
 streamlit.log
