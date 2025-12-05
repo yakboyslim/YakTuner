@@ -12,6 +12,7 @@ import pandas as pd
 from scipy import stats, interpolate
 import matplotlib.pyplot as plt
 
+
 # --- Core Calculation and Filtering Functions ---
 
 def _process_and_filter_log_data(log_df, params, logvars, WGlogic, tempcomp, tempcompaxis, min_pedal=50.0):
@@ -67,6 +68,7 @@ def _process_and_filter_log_data(log_df, params, logvars, WGlogic, tempcomp, tem
 
     return processed_log, warnings
 
+
 def _create_bins_and_labels(log_df, wgxaxis, wgyaxis):
     """Creates bin edges from axes and assigns each log entry to a grid cell (X, Y)."""
     wgxedges = np.zeros(len(wgxaxis) + 1)
@@ -84,6 +86,7 @@ def _create_bins_and_labels(log_df, wgxaxis, wgyaxis):
     log_df['X'] = pd.cut(log_df['EFF'], wgxedges, labels=False)
     log_df['Y'] = pd.cut(log_df['IFF'], wgyedges, labels=False)
     return log_df
+
 
 def create_wg_scatter_plot(log_VVL0, log_VVL1, wgxaxis, wgyaxis, WGlogic):
     """
@@ -116,6 +119,7 @@ def create_wg_scatter_plot(log_VVL0, log_VVL1, wgxaxis, wgyaxis, WGlogic):
     fig.tight_layout()
     return fig
 
+
 def _fit_surface(log_data, wgxaxis, wgyaxis):
     """
     Fits a 3D surface to the provided log data using scipy.interpolate.griddata.
@@ -133,6 +137,7 @@ def _fit_surface(log_data, wgxaxis, wgyaxis):
     if np.all(np.isnan(fitted_surface)):
         return np.zeros((len(wgyaxis), len(wgxaxis)))
     return fitted_surface / 100.0
+
 
 def _calculate_final_recommendations(log_data, blend, old_table, wgxaxis, wgyaxis, calculate_temp_coef=False):
     """
@@ -190,8 +195,10 @@ def _calculate_final_recommendations(log_data, blend, old_table, wgxaxis, wgyaxi
     else:
         return final_table
 
+
 # --- Main Orchestrator Function ---
-def run_wg_analysis(log_df, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, WGlogic, tempcomp, tempcompaxis, show_scatter_plot=True):
+def run_wg_analysis(log_df, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, WGlogic, tempcomp, tempcompaxis,
+                    show_scatter_plot=True):
     """
     Main orchestrator for the WG tuning process. A pure computational function.
 
@@ -205,16 +212,13 @@ def run_wg_analysis(log_df, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, WGlogic, 
         show_scatter_plot (bool): Flag to control generation of the scatter plot.
 
     Returns:
-        dict: A dictionary containing all results:
-              - 'status' (str): 'Success' or 'Failure'.
-              - 'warnings' (list): A list of warning messages.
-              - 'scatter_plot_fig' (matplotlib.figure.Figure or None): The generated plot.
-              - 'results_vvl0' (pd.DataFrame or None): The recommended VVL0 table.
-              - 'results_vvl1' (pd.DataFrame or None): The recommended VVL1 table.
-              - 'temp_comp_results' (pd.DataFrame or None): Temp comp recommendations.
+        dict: A dictionary containing all results.
     """
     print(" -> Initializing WG analysis...")
-    # Parameters are now hardcoded here, but could be passed in from the UI.
+    # --- FIX: Initialize warnings list at the beginning of the function ---
+    warnings = []
+    # --- END FIX ---
+
     params = {'fudge': 0.71, 'minboost': 0}
     temp_comp_results = None
     original_intercept = 0.0
@@ -232,10 +236,12 @@ def run_wg_analysis(log_df, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, WGlogic, 
             warnings.append(f"Could not calculate temp comp slope due to an error: {e}")
 
     print(" -> Preparing and filtering log data...")
-    processed_log, warnings = _process_and_filter_log_data(
+    # The _process_and_filter_log_data function returns its own warnings, so we extend the main list.
+    processed_log, filter_warnings = _process_and_filter_log_data(
         log_df=log_df, params=params, logvars=logvars, WGlogic=WGlogic,
         tempcomp=tempcomp, tempcompaxis=tempcompaxis
     )
+    warnings.extend(filter_warnings)
 
     if processed_log.empty:
         return {'status': 'Failure', 'warnings': warnings, 'scatter_plot_fig': None,
@@ -267,15 +273,15 @@ def run_wg_analysis(log_df, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, WGlogic, 
         log_VVL0, blend0, oldWG0, wgxaxis, wgyaxis, calculate_temp_coef=True
     )
 
-    # NOTE: 3D plotting logic is removed from here. It should be handled in the
-    # Streamlit script if desired, using a refactored `plot_3d_surface` function.
-
     temp_comp_results_df = None
 
     if WGlogic and tempcomp is not None and tempcompaxis is not None:
         print(" -> Preparing temperature compensation results...")
         if avg_coef is not None:
-            _slope, original_intercept = np.polyfit(tempcompaxis, tempcomp, 1)
+            # Recalculate original slope just in case it wasn't set before
+            if len(tempcomp) > 1 and len(tempcompaxis) > 1:
+                _slope, original_intercept = np.polyfit(tempcompaxis, tempcomp, 1)
+
             new_tempcomp = (avg_coef * tempcompaxis) + original_intercept
             temp_df = pd.DataFrame({
                 'Temperature': tempcompaxis,
