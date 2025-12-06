@@ -26,8 +26,17 @@ def _process_and_filter_log_data(log_df, params, logvars, WGlogic, tempcomp, tem
     if WGlogic:
         processed_log['EFF'] = processed_log['RPM']
         processed_log['IFF'] = processed_log['PUTSP'] * 10
-        interp_func = interpolate.interp1d(tempcompaxis, tempcomp, kind='linear', fill_value='extrapolate')
-        tempcorr = interp_func(processed_log['AMBTEMP'])
+        # Handle potential non-finite values from interpolation by cleaning up axis data first
+        if tempcomp is not None and tempcompaxis is not None:
+            valid_indices = np.isfinite(tempcompaxis) & np.isfinite(tempcomp)
+            if np.any(valid_indices):
+                interp_func = interpolate.interp1d(tempcompaxis[valid_indices], tempcomp[valid_indices], kind='linear', fill_value='extrapolate')
+                tempcorr = interp_func(processed_log['AMBTEMP'])
+            else:
+                tempcorr = 0
+                warnings.append("Temperature compensation data was non-finite and could not be used.")
+        else:
+            tempcorr = 0
     else:
         tempcorr = 0
 
@@ -122,20 +131,68 @@ def create_wg_scatter_plot(log_VVL0, log_VVL1, wgxaxis, wgyaxis, WGlogic):
 
 def _fit_surface(log_data, wgxaxis, wgyaxis):
     """
-    Fits a 3D surface to the provided log data using scipy.interpolate.griddata.
+    Fits a surface to the provided log data, gracefully handling low-dimensional and
+    non-finite data to prevent Qhull and other interpolation errors.
     """
-    if log_data.empty or len(log_data) < 3:
+    if log_data.empty:
         return np.zeros((len(wgyaxis), len(wgxaxis)))
-    points = log_data[['EFF', 'IFF']].values
-    values = log_data['WGNEED'].values
+
+    # --- FIX: Proactively clean data before any processing ---
+    # Use np.isfinite to remove both NaN and inf values from the key columns.
+    finite_mask = np.isfinite(log_data['EFF']) & np.isfinite(log_data['IFF']) & np.isfinite(log_data['WGNEED'])
+    clean_log_data = log_data[finite_mask]
+    # --- END FIX ---
+
+    if clean_log_data.empty or len(clean_log_data) < 3:
+        return np.zeros((len(wgyaxis), len(wgxaxis)))
+
+    points = clean_log_data[['EFF', 'IFF']].values
+    values = clean_log_data['WGNEED'].values
     grid_x, grid_y = np.meshgrid(wgxaxis, wgyaxis)
-    fitted_surface = interpolate.griddata(points, values, (grid_x, grid_y), method='linear')
+
+    # Check for variation in both dimensions. np.ptp (peak-to-peak) is a robust way to check range.
+    x_variation = np.ptp(points[:, 0]) > 1e-6
+    y_variation = np.ptp(points[:, 1]) > 1e-6
+
+    if x_variation and y_variation:
+        # Standard 3D interpolation
+        try:
+            fitted_surface = interpolate.griddata(points, values, (grid_x, grid_y), method='linear')
+        except Exception:
+            # Fallback to nearest if linear fails for any other reason (e.g., all points on a perfect line)
+            fitted_surface = interpolate.griddata(points, values, (grid_x, grid_y), method='nearest')
+    elif x_variation:
+        # Data is flat in Y dimension, use 1D interpolation along X
+        print("Warning: WG log data is flat in the Y-dimension. Using 1D interpolation for surface fit.")
+        unique_x, mean_values_idx = np.unique(points[:, 0], return_inverse=True)
+        avg_values = np.bincount(mean_values_idx, weights=values) / np.bincount(mean_values_idx)
+        interp_values = np.interp(wgxaxis, unique_x, avg_values, left=avg_values[0], right=avg_values[-1])
+        fitted_surface = np.tile(interp_values, (len(wgyaxis), 1))
+    elif y_variation:
+        # Data is flat in X dimension, use 1D interpolation along Y
+        print("Warning: WG log data is flat in the X-dimension. Using 1D interpolation for surface fit.")
+        unique_y, mean_values_idx = np.unique(points[:, 1], return_inverse=True)
+        avg_values = np.bincount(mean_values_idx, weights=values) / np.bincount(mean_values_idx)
+        interp_values = np.interp(wgyaxis, unique_y, avg_values, left=avg_values[0], right=avg_values[-1])
+        fitted_surface = np.tile(interp_values, (len(wgxaxis), 1)).T
+    else:
+        # No variation in either dimension, just use the mean value everywhere
+        print("Warning: WG log data has no variation in X or Y dimensions. Using mean value for surface.")
+        mean_value = np.mean(values)
+        fitted_surface = np.full((len(wgyaxis), len(wgxaxis)), mean_value)
+
+    # Fill any remaining NaNs from the griddata process
     nan_mask = np.isnan(fitted_surface)
     if np.any(nan_mask):
+        # Use nearest neighbor to fill in the gaps, which is robust
         nearest_fill = interpolate.griddata(points, values, (grid_x[nan_mask], grid_y[nan_mask]), method='nearest')
-        fitted_surface[nan_mask] = nearest_fill
+        if nearest_fill is not None and not np.all(np.isnan(nearest_fill)):
+             fitted_surface[nan_mask] = nearest_fill
+
+    # Final check for any all-NaN results
     if np.all(np.isnan(fitted_surface)):
         return np.zeros((len(wgyaxis), len(wgxaxis)))
+
     return fitted_surface / 100.0
 
 
@@ -154,6 +211,12 @@ def _calculate_final_recommendations(log_data, blend, old_table, wgxaxis, wgyaxi
     for i in range(len(wgxaxis)):
         for j in range(wgyaxis.shape[0]):
             cell_data = log_data[(log_data['X'] == i) & (log_data['Y'] == j)]
+
+            # --- FIX: Proactively clean data for statistical analysis ---
+            # Use np.isfinite to remove both NaN and inf values from the target column.
+            cell_data = cell_data[np.isfinite(cell_data['WGNEED'])]
+            # --- END FIX ---
+
             if len(cell_data) > 3:
                 # Get stats from raw data. `mean` and `std_dev` are in percent (0-100).
                 mean, std_dev = stats.norm.fit(cell_data['WGNEED'])
@@ -215,10 +278,7 @@ def run_wg_analysis(log_df, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, WGlogic, 
         dict: A dictionary containing all results.
     """
     print(" -> Initializing WG analysis...")
-    # --- FIX: Initialize warnings list at the beginning of the function ---
     warnings = []
-    # --- END FIX ---
-
     params = {'fudge': 0.71, 'minboost': 0}
     temp_comp_results = None
     original_intercept = 0.0
@@ -236,7 +296,6 @@ def run_wg_analysis(log_df, wgxaxis, wgyaxis, oldWG0, oldWG1, logvars, WGlogic, 
             warnings.append(f"Could not calculate temp comp slope due to an error: {e}")
 
     print(" -> Preparing and filtering log data...")
-    # The _process_and_filter_log_data function returns its own warnings, so we extend the main list.
     processed_log, filter_warnings = _process_and_filter_log_data(
         log_df=log_df, params=params, logvars=logvars, WGlogic=WGlogic,
         tempcomp=tempcomp, tempcompaxis=tempcompaxis

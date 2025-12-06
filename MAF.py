@@ -11,34 +11,50 @@ import numpy as np
 import pandas as pd
 from scipy import stats, interpolate
 
+
 # --- Helper Functions ---
 
 def _process_and_filter_maf_data(log, logvars):
     """
     A pure function to prepare and filter log data for MAF tuning using the new
-    unified correction formula.
+    unified correction formula. This now includes step-wise filtering with specific warnings.
     """
     warnings = []
     df = log.copy()
 
-    # --- Pre-filtering (add your MAF-specific filters here) ---
+    # --- FIX: Step-wise filtering with specific warnings ---
+    # Step 1: Oil Temperature Filter
     if "OILTEMP" in logvars:
         df = df[df['OILTEMP'] > 180].copy()
+        if df.empty:
+            warnings.append("No data remained after filtering for Oil Temperature > 180°F.")
+            return pd.DataFrame(), warnings
 
-    # --- FIX: Unit conversion for MAP (kPa to hPa/mbar) ---
-    # The log provides MAP in kPa, but the table axes are in hPa.
-    # Multiply by 10 to ensure data is binned and interpolated correctly.
+    # Step 2: Unit conversion for MAP (kPa to hPa/mbar)
     if 'MAP' in df.columns:
         df.loc[:, 'MAP'] = df['MAP'] * 10
     else:
-        # This is a critical variable, so we should warn if it's missing.
         warnings.append("Log variable 'MAP' not found. MAF analysis will likely fail.")
+        return pd.DataFrame(), warnings
+
+    # Step 3: Pre-emptive check for division by zero, now correctly placed
+    if 'LAMBDA_SP' in df.columns:
+        zero_sp_mask = df['LAMBDA_SP'] == 0
+        if zero_sp_mask.any():
+            warnings.append("Log contains rows where 'LAMBDA_SP' is zero. These rows are being ignored.")
+            df = df[~zero_sp_mask].copy()
+            if df.empty:
+                warnings.append("No data remained after filtering for zero-value 'LAMBDA_SP'.")
+                return pd.DataFrame(), warnings
+    else:
+        warnings.append("Log variable 'LAMBDA_SP' not found. Cannot calculate fuel error.")
         return pd.DataFrame(), warnings
     # --- END FIX ---
 
     # --- New Unified Correction Formula ---
     required_vars = ['LAMBDA', 'LAMBDA_SP']
     if not all(v in df.columns for v in required_vars):
+        # This check is now somewhat redundant but kept as a final safeguard
         raise ValueError(f"MAF analysis requires essential log variables: {required_vars}")
 
     # Get all potential correction factors, with defaults
@@ -84,20 +100,15 @@ def _process_and_filter_maf_data(log, logvars):
     else:
         warnings.append("No suitable STFT correction variable found. Assuming neutral STFT correction (1.0).")
 
-    # Calculate the total target correction factor needed.
-    # Target_Factor = (all current ECU factors) * (measured_error)
-    total_ecu_factor = (1 + maf_cor/100) * stft_correction_term * mff_cor * ltft_correction_term
+    total_ecu_factor = (1 + maf_cor / 100) * stft_correction_term * mff_cor * ltft_correction_term
     measured_error = df['LAMBDA'] / df['LAMBDA_SP']
     target_factor = total_ecu_factor * measured_error
 
-    # --- Calculate the new ADD_MAF value ---
-    # In MAF tuning, we solve for the additive correction MAF_COR_NEW.
-    # The MFF part of the new correction is assumed to be 1.
-    # Target_Factor = (1 + MAF_COR_NEW) * 1
     maf_cor_new = target_factor - 1
-    df.loc[:, 'ADD_MAF'] = maf_cor_new  # The rest of the MAF module works with 'ADD_MAF'
+    df.loc[:, 'ADD_MAF'] = maf_cor_new
 
     return df, warnings
+
 
 def _create_bins(log, mafxaxis, mafyaxis):
     """Discretizes log data into bins based on MAF map axes."""
@@ -108,28 +119,65 @@ def _create_bins(log, mafxaxis, mafyaxis):
     log.loc[:, 'Y'] = pd.cut(log['MAP'], bins=yedges, labels=False, duplicates='drop')
     return log
 
+
 def _fit_surface_maf(log_data, mafxaxis, mafyaxis):
-    """Fits a 3D surface to the MAF correction data using griddata."""
-    if log_data.empty or len(log_data) < 3:
+    """
+    Fits a surface to the MAF correction data, gracefully handling low-dimensional and
+    non-finite data to prevent Qhull and other interpolation errors.
+    """
+    if log_data.empty:
         return np.zeros((len(mafyaxis), len(mafxaxis)))
 
-    points = log_data[['RPM', 'MAP']].values
-    values = log_data['ADD_MAF'].values
+    # Proactively clean data to remove rows with non-finite values (NaN or inf)
+    finite_mask = np.isfinite(log_data['RPM']) & np.isfinite(log_data['MAP']) & np.isfinite(log_data['ADD_MAF'])
+    clean_log_data = log_data[finite_mask]
+
+    if clean_log_data.empty or len(clean_log_data) < 3:
+        return np.zeros((len(mafyaxis), len(mafxaxis)))
+
+    points = clean_log_data[['RPM', 'MAP']].values
+    values = clean_log_data['ADD_MAF'].values
     grid_x, grid_y = np.meshgrid(mafxaxis, mafyaxis)
 
-    fitted_surface = interpolate.griddata(points, values, (grid_x, grid_y), method='linear')
+    # Check for variation in both dimensions
+    x_variation = np.ptp(points[:, 0]) > 1e-6
+    y_variation = np.ptp(points[:, 1]) > 1e-6
 
+    if x_variation and y_variation:
+        try:
+            fitted_surface = interpolate.griddata(points, values, (grid_x, grid_y), method='linear')
+        except Exception:
+            fitted_surface = interpolate.griddata(points, values, (grid_x, grid_y), method='nearest')
+    elif x_variation:
+        print("Warning: MAF log data is flat in the Y-dimension (MAP). Using 1D interpolation.")
+        unique_x, mean_values_idx = np.unique(points[:, 0], return_inverse=True)
+        avg_values = np.bincount(mean_values_idx, weights=values) / np.bincount(mean_values_idx)
+        interp_values = np.interp(mafxaxis, unique_x, avg_values, left=avg_values[0], right=avg_values[-1])
+        fitted_surface = np.tile(interp_values, (len(mafyaxis), 1))
+    elif y_variation:
+        print("Warning: MAF log data is flat in the X-dimension (RPM). Using 1D interpolation.")
+        unique_y, mean_values_idx = np.unique(points[:, 1], return_inverse=True)
+        avg_values = np.bincount(mean_values_idx, weights=values) / np.bincount(mean_values_idx)
+        interp_values = np.interp(mafyaxis, unique_y, avg_values, left=avg_values[0], right=avg_values[-1])
+        fitted_surface = np.tile(interp_values, (len(mafxaxis), 1)).T
+    else:
+        print("Warning: MAF log data has no variation in X or Y dimensions. Using mean value.")
+        mean_value = np.mean(values)
+        fitted_surface = np.full((len(mafyaxis), len(mafxaxis)), mean_value)
+
+    # Fill any remaining NaNs from the griddata process
     nan_mask = np.isnan(fitted_surface)
     if np.any(nan_mask):
         nearest_fill = interpolate.griddata(points, values, (grid_x[nan_mask], grid_y[nan_mask]), method='nearest')
-        fitted_surface[nan_mask] = nearest_fill
+        if nearest_fill is not None and not np.all(np.isnan(nearest_fill)):
+            fitted_surface[nan_mask] = nearest_fill
 
     return np.nan_to_num(fitted_surface)
+
 
 def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafyaxis, confidence, additive_mode=False):
     """
     Applies confidence interval logic to determine the final correction table.
-    Supports standard (replacement) and additive correction modes.
     """
     new_table = old_table.copy()
     max_count = 80
@@ -138,100 +186,96 @@ def _calculate_maf_correction(log_data, blend_surface, old_table, mafxaxis, mafy
     for i in range(len(mafxaxis)):
         for j in range(len(mafyaxis)):
             cell_data = log_data[(log_data['X'] == i) & (log_data['Y'] == j)]
+
+            # Proactively clean data for statistical analysis
+            cell_data = cell_data[np.isfinite(cell_data['ADD_MAF'])]
+
             count = len(cell_data)
 
             if count > 3:
                 mean, std_dev = stats.norm.fit(cell_data['ADD_MAF'])
                 surface_val = blend_surface[j, i]
-
-                # 1. Define a 'target' correction by blending the global surface fit and the local cell mean.
                 target_val = (surface_val * interp_factor) + (mean * (1 - interp_factor))
-
-                # 2. Construct the Confidence Interval around this new blended target.
-                low_ci, high_ci = stats.norm.interval(confidence, loc=target_val, scale=std_dev if std_dev > 0 else 1e-9)
-
-                # The value from the original tune file
+                low_ci, high_ci = stats.norm.interval(confidence, loc=target_val,
+                                                      scale=std_dev if std_dev > 0 else 1e-9)
                 current_val_from_table = old_table[j, i]
-
-                # The value to compare against the confidence interval.
-                # In additive mode, we compare against 0 to see if any correction is needed.
-                # In standard mode, we compare against the table's current value to see if it's already correct.
                 comparison_val = 0.0 if additive_mode else current_val_from_table
 
-                # 3. Decide if a change is needed by comparing the comparison value to the new CI.
                 if not (low_ci <= comparison_val <= high_ci):
-                    # If a change is needed, calculate the amount of change.
-                    # Weight the change by the number of data points to control aggressiveness.
                     weight = min(count, max_count) / max_count
-
-                    # The change amount is the difference between the target and the value we compared against.
                     change_amount = (target_val - comparison_val) * weight
-
-                    # Apply the change to the value from the original table.
                     new_table[j, i] = current_val_from_table + change_amount
 
-    # Quantize the final table to the ECU's resolution (5.12 = 256 / 50)
     recommended_table = np.round(new_table * 5.12) / 5.12
     return recommended_table
+
 
 # --- Main Orchestrator Function ---
 def run_maf_analysis(log, mafxaxis, mafyaxis, maftables, combmodes_MAF, logvars):
     """
     Main orchestrator for the MAF tuning process. A pure computational function.
-
-    Args:
-        log (pd.DataFrame): The mapped log data.
-        mafxaxis, mafyaxis (np.ndarray): The axes for the MAF tables.
-        maftables (list[np.ndarray]): A list of the four original MAF tables.
-        combmodes_MAF (np.ndarray): The combination modes map.
-        logvars (list): A list of available variable names in the log.
-
-    Returns:
-        dict: A dictionary containing all results.
     """
-    print(" -> Initializing MAF analysis...")
-    params = {'confidence': 0.6} # Hardcoded parameter
+    try:
+        print(" -> Initializing MAF analysis...")
+        params = {'confidence': 0.6}
 
-    print(" -> Preparing MAF data from logs...")
-    processed_log, warnings = _process_and_filter_maf_data(log, logvars)
+        print(" -> Preparing MAF data from logs...")
+        processed_log, warnings = _process_and_filter_maf_data(log, logvars)
 
-    # Determine if we are in additive mode (if MAF_COR is not available in logs)
-    additive_mode = 'MAF_COR' not in logvars
-    if additive_mode:
-        warnings.append("MAF_COR not found in logs. Switching to additive correction mode.")
+        additive_mode = 'MAF_COR' not in logvars
+        if additive_mode:
+            warnings.append("MAF_COR not found in logs. Switching to additive correction mode.")
 
-    if processed_log.empty:
-        return {'status': 'Failure', 'warnings': warnings, 'results_maf': None}
+        if processed_log.empty:
+            # The warnings list will already contain the specific reason from the filter function
+            return {'status': 'Failure', 'warnings': warnings, 'results_maf': None}
 
-    print(" -> Creating data bins from MAF axes...")
-    log_binned = _create_bins(processed_log, mafxaxis, mafyaxis)
+        print(" -> Creating data bins from MAF axes...")
+        log_binned = _create_bins(processed_log, mafxaxis, mafyaxis)
 
-    results = {}
-    for idx in range(4):
-        print(f" -> Processing MAF Table IDX{idx}...")
-        current_table = maftables[idx]
-        idx_modes = np.where(combmodes_MAF == idx)[0]
-        log_filtered = log_binned[log_binned['CMB'].isin(idx_modes)].copy()
-        log_filtered.dropna(subset=['RPM', 'MAP', 'ADD_MAF'], inplace=True)
+        if 'CMB' not in log_binned.columns:
+            warnings.append("Log variable 'CMB' (Combination Mode) not found. Cannot determine which MAF table to correct.")
+            return {'status': 'Failure', 'warnings': warnings, 'results_maf': None}
 
-        print(f"   -> Fitting 3D surface for IDX{idx}...")
-        blend_surface = _fit_surface_maf(log_filtered, mafxaxis, mafyaxis)
+        results = {}
+        for idx in range(4):
+            print(f" -> Processing MAF Table IDX{idx}...")
+            current_table = maftables[idx]
+            idx_modes = np.where(combmodes_MAF == idx)[0]
+            log_filtered = log_binned[log_binned['CMB'].isin(idx_modes)].copy()
 
-        print(f"   -> Calculating correction map for IDX{idx}...")
-        recommended_table = _calculate_maf_correction(
-            log_filtered, blend_surface, current_table, mafxaxis, mafyaxis, params['confidence'], additive_mode=additive_mode
-        )
+            log_filtered = log_filtered[
+                np.isfinite(log_filtered['RPM']) & np.isfinite(log_filtered['MAP']) & np.isfinite(log_filtered['ADD_MAF'])]
 
-        # Store results as a DataFrame
-        xlabels = [str(x) for x in mafxaxis]
-        ylabels = [str(y) for y in mafyaxis]
-        results[f'IDX{idx}'] = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
+            if log_filtered.empty:
+                warnings.append(f"No valid data found for MAF Table IDX{idx}. This table will not be changed.")
+                xlabels = [str(x) for x in mafxaxis]
+                ylabels = [str(y) for y in mafyaxis]
+                results[f'IDX{idx}'] = pd.DataFrame(current_table, columns=xlabels, index=ylabels)
+                continue
 
-    # 3D plotting and table display are now handled by the UI (Streamlit).
+            print(f"   -> Fitting 3D surface for IDX{idx}...")
+            blend_surface = _fit_surface_maf(log_filtered, mafxaxis, mafyaxis)
 
-    print(" -> MAF analysis complete.")
-    return {
-        'status': 'Success',
-        'warnings': warnings,
-        'results_maf': results
-    }
+            print(f"   -> Calculating correction map for IDX{idx}...")
+            recommended_table = _calculate_maf_correction(
+                log_filtered, blend_surface, current_table, mafxaxis, mafyaxis, params['confidence'],
+                additive_mode=additive_mode
+            )
+
+            xlabels = [str(x) for x in mafxaxis]
+            ylabels = [str(y) for y in mafyaxis]
+            results[f'IDX{idx}'] = pd.DataFrame(recommended_table, columns=xlabels, index=ylabels)
+
+        print(" -> MAF analysis complete.")
+        return {
+            'status': 'Success',
+            'warnings': warnings,
+            'results_maf': results
+        }
+    except Exception as e:
+        return {
+            'status': 'Failure',
+            'warnings': [f"A critical error occurred inside the MAF module: {e}"],
+            'results_maf': None
+        }

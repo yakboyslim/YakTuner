@@ -138,8 +138,6 @@ if firmware == 'Other':
 
 # --- Helper Functions ---
 
-# In C:/Users/Sam/PycharmProjects/YAKtunerCONVERTED/yaktuner_streamlit.py
-
 def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
     """
     Displays a title, a styled DataFrame with its index, and a button to copy
@@ -162,7 +160,6 @@ def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
     # Use a unique key for the button based on the title to avoid conflicts
     button_label = f"📋 Copy {title.strip('# ')} Data"
 
-    # --- FIX ---
     # Generate a unique key from the title. This is crucial when this function
     # is called inside a loop (e.g., for MAF or MFF tables), as each
     # st_copy_button widget needs a distinct key to avoid a DuplicateKeyError.
@@ -170,7 +167,6 @@ def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
     button_key = f"copy_btn_{re.sub(r'[^a-zA-Z0-9]', '', title)}"
 
     st_copy_button(clipboard_text, button_label, key=button_key)
-    # --- END FIX ---
 
     st.caption("Use the button above to copy data for pasting into TunerPro.")
 
@@ -484,18 +480,12 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
         st.session_state.run_analysis = False
     else:
         try:
-            wg_results, maf_results, mff_results, knk_results, lpfp_results = None, None, None, None, None
+            wg_results, maf_results, mff_results, knk_results, lpfp_results, tta_att_results = None, None, None, None, None, None
             all_maps_data = {}
 
-            # --- Phase 1: Interactive Variable Mapping (MODIFIED BLOCK) ---
-            # The st.status wrapper has been removed from here. The function now handles it internally.
+            # --- Phase 1: Load and Map Variables ---
             log_df = pd.concat((pd.read_csv(f, encoding='latin1').iloc[:, :-1] for f in uploaded_log_files),
                                ignore_index=True)
-
-            if 'OILTEMP' in log_df.columns and oil_temp_unit == 'C':
-                st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
-                log_df['OILTEMP'] = log_df['OILTEMP'] * 1.8 + 32
-                st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
 
             if not os.path.exists(default_vars):
                 raise FileNotFoundError(
@@ -507,7 +497,17 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             # --- This is the key change: The rest of the script only runs if mapping is complete ---
             if mapped_log_df is not None:
 
+                # --- FIX: Correct order of operations for Temperature Conversion ---
+                # Convert temperature AFTER mapping to ensure we act on the canonical 'OILTEMP' column
+                if 'OILTEMP' in mapped_log_df.columns and oil_temp_unit == 'C':
+                    st.write("Converting Oil Temperature from Celsius to Fahrenheit...")
+                    # Use .loc to avoid SettingWithCopyWarning
+                    mapped_log_df.loc[:, 'OILTEMP'] = mapped_log_df['OILTEMP'] * 1.8 + 32
+                    st.toast("Oil Temperature converted to Fahrenheit.", icon="🌡️")
+                # --- END FIX ---
+
                 mapped_log_df = _apply_advanced_state_lam_filter(mapped_log_df).copy()
+
                 # --- Phase 2: Main Analysis Pipeline ---
                 with st.status("Starting YAKtuner analysis...", expanded=True) as status:
                     if 'updated_varconv_df' in st.session_state:
@@ -547,6 +547,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                         # Prepare a log copy for MFF, which might be modified by the MAF stage
                         log_for_mff = mapped_log_df.copy()
 
+                        # --- Robust Analysis Block Pattern ---
                         if run_wg:
                             with st.status("Running Wastegate (WG) analysis...", expanded=True) as module_status:
                                 try:
@@ -570,26 +571,21 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                         WGlogic=use_swg_logic, tempcomp=module_maps.get(temp_comp_key),
                                         tempcompaxis=module_maps.get(temp_comp_axis_key)
                                     )
-                                    if wg_results['status'] == 'Success':
-                                        module_status.update(label="Wastegate (WG) analysis complete.", state="complete", expanded=False)
-                                    else:
-                                        st.error("WG analysis failed. Check warnings and console logs for details.")
+                                    if wg_results.get('status') != 'Success':
                                         module_status.update(label="Wastegate (WG) analysis failed.", state="error", expanded=True)
+                                    else:
+                                        module_status.update(label="Wastegate (WG) analysis complete.", state="complete", expanded=False)
                                 except Exception as e:
-                                    st.error(f"An unexpected error occurred during WG tuning: {e}")
+                                    wg_results = {'status': 'Failure', 'warnings': [f"An unexpected error occurred: {e}"]}
                                     module_status.update(label="Wastegate (WG) analysis failed.", state="error", expanded=True)
 
                         if run_maf:
-                            with st.status("Running Mass Airflow (MAF) analysis...",
-                                           expanded=True) as module_status:
+                            with st.status("Running Mass Airflow (MAF) analysis...", expanded=True) as module_status:
                                 try:
-                                    keys = ['maftable0_X', 'maftable0_Y', 'combmodes_MAF'] + [f'maftable{i}'
-                                                                                              for i in
-                                                                                              range(4)]
+                                    keys = ['maftable0_X', 'maftable0_Y', 'combmodes_MAF'] + [f'maftable{i}' for i in range(4)]
                                     module_maps = {key: all_maps.get(key) for key in keys}
                                     missing = [key for key, val in module_maps.items() if val is None]
-                                    if missing: raise KeyError(
-                                        f"A required map is missing: {', '.join(missing)}")
+                                    if missing: raise KeyError(f"A required map is missing: {', '.join(missing)}")
                                     all_maps_data['maf'] = module_maps
 
                                     maf_results = cached_run_maf_analysis(
@@ -600,102 +596,57 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                         logvars=mapped_log_df.columns.tolist()
                                     )
 
-                                    if maf_results['status'] == 'Success':
-                                        module_status.update(label="Mass Airflow (MAF) analysis complete.",
-                                                             state="complete", expanded=False)
-
-                                        # If MFF is also selected, prepare the log for the second stage.
+                                    if maf_results.get('status') == 'Success':
+                                        module_status.update(label="Mass Airflow (MAF) analysis complete.", state="complete", expanded=False)
                                         if run_mff:
-                                            module_status.update(
-                                                label="Preparing data for MFF second-stage...",
-                                                state="running")
-                                            # Get the primary new MAF table (IDX0)
+                                            # Logic to prepare log_for_mff
                                             new_maf_table_df = maf_results['results_maf']['IDX0']
-
-                                            # --- New ECU-like Interpolation Logic ---
-                                            # The ECU performs 2D linear interpolation and clamps to the edge
-                                            # of the map if coordinates are out of bounds. We replicate that here.
-
-                                            # 1. Define the axes and values for the interpolator.
                                             y_axis_map = new_maf_table_df.index.astype(float).values
                                             x_axis_rpm = new_maf_table_df.columns.astype(float).values
                                             table_values = new_maf_table_df.values
-
-                                            # 2. Create a RegularGridInterpolator for linear interpolation.
-                                            # We set bounds_error=False and fill_value=None, as we will handle
-                                            # out-of-bounds values by clamping the inputs manually.
                                             interpolator = interpolate.RegularGridInterpolator(
-                                                (y_axis_map, x_axis_rpm),  # Points are (MAP, RPM)
-                                                table_values,
-                                                method='linear',
-                                                bounds_error=False,
-                                                fill_value=None
+                                                (y_axis_map, x_axis_rpm), table_values,
+                                                method='linear', bounds_error=False, fill_value=None
                                             )
-
-                                            # 3. Get the coordinates from the log file to be interpolated.
-                                            # --- FIX: Apply the same kPa -> hPa conversion before interpolation ---
-                                            # This ensures the MAP values from the log match the scale of the new MAF table's Y-axis.
                                             map_coords_to_interp = log_for_mff['MAP'].values * 10
                                             rpm_coords_to_interp = log_for_mff['RPM'].values
-                                            # --- END FIX ---
-
-                                            # 4. Clamp the coordinates to the boundaries of the table axes.
-                                            # This replicates the ECU's behavior of using the last row/column
-                                            # for any value outside the defined range.
                                             clamped_map = np.clip(map_coords_to_interp, y_axis_map.min(), y_axis_map.max())
                                             clamped_rpm = np.clip(rpm_coords_to_interp, x_axis_rpm.min(), x_axis_rpm.max())
-
-                                            # 5. Create a combined array of points and apply the interpolator.
                                             points_to_interpolate = np.vstack((clamped_map, clamped_rpm)).T
                                             log_for_mff['MAF_COR_NEW'] = interpolator(points_to_interpolate)
-                                            # --- End of New Interpolation Logic ---
                                     else:
-                                        st.error("MAF analysis failed. Check warnings for details.")
-                                        module_status.update(label="Mass Airflow (MAF) analysis failed.",
-                                                             state="error", expanded=True)
+                                        module_status.update(label="Mass Airflow (MAF) analysis failed.", state="error", expanded=True)
                                 except Exception as e:
-                                    st.error(f"An unexpected error occurred during MAF tuning: {e}")
-                                    module_status.update(label="Mass Airflow (MAF) analysis failed.",
-                                                         state="error", expanded=True)
+                                    maf_results = {'status': 'Failure', 'warnings': [f"An unexpected error occurred: {e}"]}
+                                    module_status.update(label="Mass Airflow (MAF) analysis failed.", state="error", expanded=True)
 
                         if run_mff:
-                            with st.status("Running Fuel Factor (MFF) analysis...",
-                                           expanded=True) as module_status:
+                            with st.status("Running Fuel Factor (MFF) analysis...", expanded=True) as module_status:
                                 try:
-                                    keys = ['MFFtable0_X', 'MFFtable0_Y', 'combmodes_MFF'] + [f'MFFtable{i}'
-                                                                                              for i in
-                                                                                              range(5)]
+                                    keys = ['MFFtable0_X', 'MFFtable0_Y', 'combmodes_MFF'] + [f'MFFtable{i}' for i in range(5)]
                                     module_maps = {key: all_maps.get(key) for key in keys}
                                     missing = [key for key, val in module_maps.items() if val is None]
-                                    if missing: raise KeyError(
-                                        f"A required map is missing: {', '.join(missing)}")
+                                    if missing: raise KeyError(f"A required map is missing: {', '.join(missing)}")
                                     all_maps_data['mff'] = module_maps
 
-                                    # Determine the tuning mode for MFF based on whether MAF ran successfully
-                                    mff_tuning_mode = 'BOTH' if run_maf and maf_results and maf_results.get(
-                                        'status') == 'Success' else 'MFF'
+                                    mff_tuning_mode = 'BOTH' if run_maf and maf_results and maf_results.get('status') == 'Success' else 'MFF'
 
                                     mff_results = cached_run_mff_analysis(
-                                        log=log_for_mff,  # Use the potentially modified log
+                                        log=log_for_mff,
                                         mffxaxis=module_maps['MFFtable0_X'],
                                         mffyaxis=module_maps['MFFtable0_Y'],
                                         mfftables=[module_maps[f'MFFtable{i}'] for i in range(5)],
                                         combmodes_MFF=module_maps['combmodes_MFF'],
                                         logvars=mapped_log_df.columns.tolist(),
-                                        tuning_mode=mff_tuning_mode  # Pass the mode
+                                        tuning_mode=mff_tuning_mode
                                     )
-                                    if mff_results['status'] == 'Success':
-                                        module_status.update(label="Fuel Factor (MFF) analysis complete.",
-                                                             state="complete", expanded=False)
+                                    if mff_results.get('status') != 'Success':
+                                        module_status.update(label="Fuel Factor (MFF) analysis failed.", state="error", expanded=True)
                                     else:
-                                        st.error("MFF analysis failed. Check warnings for details.")
-                                        module_status.update(label="Fuel Factor (MFF) analysis failed.",
-                                                             state="error", expanded=True)
+                                        module_status.update(label="Fuel Factor (MFF) analysis complete.", state="complete", expanded=False)
                                 except Exception as e:
-                                    st.error(f"An unexpected error occurred during MFF tuning: {e}")
-                                    module_status.update(label="Fuel Factor (MFF) analysis failed.",
-                                                         state="error", expanded=True)
-
+                                    mff_results = {'status': 'Failure', 'warnings': [f"An unexpected error occurred: {e}"]}
+                                    module_status.update(label="Fuel Factor (MFF) analysis failed.", state="error", expanded=True)
 
                         if run_ign:
                             with st.status("Running Ignition (KNK) analysis...", expanded=True) as module_status:
@@ -712,13 +663,12 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                         IGNmaps=[module_maps.get(f'igmap{i}') for i in range(6)], max_adv=max_adv,
                                         map_num=ign_map
                                     )
-                                    if knk_results['status'] == 'Success':
-                                        module_status.update(label="Ignition (KNK) analysis complete.", state="complete", expanded=False)
-                                    else:
-                                        st.error("KNK analysis failed. Check warnings for details.")
+                                    if knk_results.get('status') != 'Success':
                                         module_status.update(label="Ignition (KNK) analysis failed.", state="error", expanded=True)
+                                    else:
+                                        module_status.update(label="Ignition (KNK) analysis complete.", state="complete", expanded=False)
                                 except Exception as e:
-                                    st.error(f"An unexpected error occurred during KNK tuning: {e}")
+                                    knk_results = {'status': 'Failure', 'warnings': [f"An unexpected error occurred: {e}"]}
                                     module_status.update(label="Ignition (KNK) analysis failed.", state="error", expanded=True)
 
                         if run_lpfp:
@@ -728,9 +678,7 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                     keys = ['lpfppwm_X', 'lpfppwm_Y', table_key]
                                     module_maps = {key: all_maps.get(key) for key in keys}
                                     missing = [key for key, val in module_maps.items() if val is None]
-                                    if missing:
-                                        raise KeyError(
-                                            f"A required map for LPFP tuning is missing: {', '.join(missing)}")
+                                    if missing: raise KeyError(f"A required map for LPFP tuning is missing: {', '.join(missing)}")
                                     all_maps_data['lpfp'] = module_maps
                                     all_maps_data['lpfp']['table_key'] = table_key
 
@@ -739,45 +687,25 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                                         yaxis=module_maps['lpfppwm_Y'],
                                         old_table=module_maps[table_key], logvars=mapped_log_df.columns.tolist()
                                     )
-                                    if lpfp_results['status'] == 'Success':
-                                        module_status.update(label="Fuel Pump (LPFP) analysis complete.",
-                                                             state="complete", expanded=False)
+                                    if lpfp_results.get('status') != 'Success':
+                                        module_status.update(label="Fuel Pump (LPFP) analysis failed.", state="error", expanded=True)
                                     else:
-                                        st.error("LPFP analysis failed. Check warnings for details.")
-                                        module_status.update(label="Fuel Pump (LPFP) analysis failed.",
-                                                             state="error", expanded=True)
+                                        module_status.update(label="Fuel Pump (LPFP) analysis complete.", state="complete", expanded=False)
                                 except Exception as e:
-                                    st.error(f"An unexpected error occurred during LPFP tuning: {e}")
-                                    module_status.update(label="Fuel Pump (LPFP) analysis failed.", state="error",
-                                                         expanded=True)
+                                    lpfp_results = {'status': 'Failure', 'warnings': [f"An unexpected error occurred: {e}"]}
+                                    module_status.update(label="Fuel Pump (LPFP) analysis failed.", state="error", expanded=True)
 
                         if run_tta_att:
-                            with st.status("Running TTA/ATT Consistency Check...",
-                                           expanded=True) as module_status:
+                            with st.status("Running TTA/ATT Consistency Check...", expanded=True) as module_status:
                                 try:
                                     tta_att_results = cached_run_tta_att_analysis(all_maps=all_maps)
-                                    if tta_att_results['status'] == 'Success':
-                                        module_status.update(label="TTA/ATT Check complete.",
-                                                             state="complete", expanded=False)
+                                    if tta_att_results.get('status') != 'Success':
+                                        module_status.update(label="TTA/ATT Check failed.", state="error", expanded=True)
                                     else:
-                                        # --- START: New, more detailed error display ---
-                                        all_warnings = tta_att_results.get('warnings', [])
-                                        debug_logs = tta_att_results.get('debug_logs', [])
-
-                                        for warning in all_warnings:
-                                            st.warning(f"TTA/ATT Check Warning: {warning}")
-
-                                        if debug_logs:
-                                            with st.expander("Click to view detailed TTA/ATT debug log"):
-                                                st.code('\n'.join(debug_logs), language=None)
-                                        # --- END: New, more detailed error display ---
-
-                                        module_status.update(label="TTA/ATT Check failed.", state="error",
-                                                             expanded=True)
+                                        module_status.update(label="TTA/ATT Check complete.", state="complete", expanded=False)
                                 except Exception as e:
-                                    st.error(f"An unexpected error occurred during TTA/ATT Check: {e}")
-                                    module_status.update(label="TTA/ATT Check failed.", state="error",
-                                                         expanded=True)
+                                    tta_att_results = {'status': 'Failure', 'warnings': [f"An unexpected error occurred: {e}"]}
+                                    module_status.update(label="TTA/ATT Check failed.", state="error", expanded=True)
 
                     status.update(label="Analysis complete!", state="complete", expanded=False)
 
@@ -787,136 +715,154 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
                 # --- Phase 3: Display All Results ---
                 st.header("📈 Analysis Results")
 
-                if wg_results and wg_results.get('status') == 'Success':
+                # --- Robust Display Logic ---
+                if wg_results:
                     with st.expander("Wastegate (WG) Tuning Results", expanded=True):
-                        if wg_results['warnings']:
-                            for warning in wg_results['warnings']: st.warning(f"WG Analysis Warning: {warning}")
+                        if wg_results.get('warnings'):
+                            for warning in wg_results['warnings']:
+                                st.warning(f"WG Analysis Warning: {warning}")
 
-                        res_vvl0, res_vvl1 = wg_results['results_vvl0'], wg_results['results_vvl1']
-                        scatter_plot, temp_comp = wg_results['scatter_plot_fig'], wg_results['temp_comp_results']
-                        module_maps = all_maps_data['wg']
-                        x_axis_key = 'swgpid0_X' if use_swg_logic else 'wgpid0_X'
-                        y_axis_key = 'swgpid0_Y' if use_swg_logic else 'wgpid0_Y'
+                        if wg_results.get('status') == 'Success':
+                            res_vvl0, res_vvl1 = wg_results['results_vvl0'], wg_results['results_vvl1']
+                            scatter_plot, temp_comp = wg_results['scatter_plot_fig'], wg_results['temp_comp_results']
+                            module_maps = all_maps_data['wg']
+                            x_axis_key = 'swgpid0_X' if use_swg_logic else 'wgpid0_X'
+                            y_axis_key = 'swgpid0_Y' if use_swg_logic else 'wgpid0_Y'
 
-                        exh_labels = [str(x) for x in module_maps[x_axis_key]]
-                        int_labels = [str(y) for y in module_maps[y_axis_key]]
+                            exh_labels = [str(x) for x in module_maps[x_axis_key]]
+                            int_labels = [str(y) for y in module_maps[y_axis_key]]
 
-                        original_vvl0_df = pd.DataFrame(module_maps['wgpid0'], index=int_labels, columns=exh_labels)
-                        original_vvl1_df = pd.DataFrame(module_maps['wgpid1'], index=int_labels, columns=exh_labels)
-                        styled_vvl0 = style_changed_cells(res_vvl0, original_vvl0_df)
-                        styled_vvl1 = style_changed_cells(res_vvl1, original_vvl1_df)
+                            original_vvl0_df = pd.DataFrame(module_maps['wgpid0'], index=int_labels, columns=exh_labels)
+                            original_vvl1_df = pd.DataFrame(module_maps['wgpid1'], index=int_labels, columns=exh_labels)
+                            styled_vvl0 = style_changed_cells(res_vvl0, original_vvl0_df)
+                            styled_vvl1 = style_changed_cells(res_vvl1, original_vvl1_df)
 
-                        tab1, tab2, tab3 = st.tabs(["📈 Recommended Tables", "📊 Scatter Plot", "🌡️ Temp Comp"])
-                        with tab1:
-                            display_table_with_copy_button("#### Recommended WGPID0 (VVL0)", styled_vvl0, res_vvl0)
-                            st.divider()
-                            display_table_with_copy_button("#### Recommended WGPID1 (VVL1)", styled_vvl1, res_vvl1)
-                        with tab2:
-                            if scatter_plot:
-                                st.pyplot(scatter_plot)
-                            else:
-                                st.info("Scatter plot was not generated.")
-                        with tab3:
-                            if temp_comp is not None:
-                                display_table_with_copy_button("#### Recommended Temperature Compensation",
-                                                               temp_comp.style, temp_comp)
-                            else:
-                                st.info("No temperature compensation adjustments were recommended.")
+                            tab1, tab2, tab3 = st.tabs(["📈 Recommended Tables", "📊 Scatter Plot", "🌡️ Temp Comp"])
+                            with tab1:
+                                display_table_with_copy_button("#### Recommended WGPID0 (VVL0)", styled_vvl0, res_vvl0)
+                                st.divider()
+                                display_table_with_copy_button("#### Recommended WGPID1 (VVL1)", styled_vvl1, res_vvl1)
+                            with tab2:
+                                if scatter_plot:
+                                    st.pyplot(scatter_plot)
+                                else:
+                                    st.info("Scatter plot was not generated.")
+                            with tab3:
+                                if temp_comp is not None:
+                                    display_table_with_copy_button("#### Recommended Temperature Compensation",
+                                                                   temp_comp.style, temp_comp)
+                                else:
+                                    st.info("No temperature compensation adjustments were recommended.")
 
-                if maf_results and maf_results.get('status') == 'Success':
+                if maf_results:
                     with st.expander("Mass Airflow (MAF) Tuning Results", expanded=True):
-                        if maf_results['warnings']:
-                            for warning in maf_results['warnings']: st.warning(f"MAF Analysis Warning: {warning}")
-                        recommended_maf_dfs = maf_results['results_maf']
-                        module_maps = all_maps_data['maf']
-                        tabs = st.tabs([f"📈 MAF Table IDX{i}" for i in range(4)])
-                        for i, tab in enumerate(tabs):
-                            with tab:
-                                original_df = pd.DataFrame(module_maps[f'maftable{i}'],
-                                                           index=[str(y) for y in module_maps['maftable0_Y']],
-                                                           columns=[str(x) for x in module_maps['maftable0_X']])
-                                recommended_df = recommended_maf_dfs[f'IDX{i}']
-                                styled_table = style_changed_cells(recommended_df, original_df)
-                                display_table_with_copy_button(f"#### Recommended `maftable{i}`", styled_table,
-                                                               recommended_df)
+                        if maf_results.get('warnings'):
+                            for warning in maf_results['warnings']:
+                                st.warning(f"MAF Analysis Warning: {warning}")
 
-                if mff_results and mff_results.get('status') == 'Success':
+                        if maf_results.get('status') == 'Success':
+                            recommended_maf_dfs = maf_results['results_maf']
+                            module_maps = all_maps_data['maf']
+                            tabs = st.tabs([f"📈 MAF Table IDX{i}" for i in range(4)])
+                            for i, tab in enumerate(tabs):
+                                with tab:
+                                    original_df = pd.DataFrame(module_maps[f'maftable{i}'],
+                                                               index=[str(y) for y in module_maps['maftable0_Y']],
+                                                               columns=[str(x) for x in module_maps['maftable0_X']])
+                                    recommended_df = recommended_maf_dfs[f'IDX{i}']
+                                    styled_table = style_changed_cells(recommended_df, original_df)
+                                    display_table_with_copy_button(f"#### Recommended `maftable{i}`", styled_table,
+                                                                   recommended_df)
+
+                if mff_results:
                     with st.expander("Multiplicative Fuel Factor (MFF) Tuning Results", expanded=True):
-                        if mff_results['warnings']:
-                            for warning in mff_results['warnings']: st.warning(f"MFF Analysis Warning: {warning}")
-                        recommended_mff_dfs = mff_results['results_mff']
-                        module_maps = all_maps_data['mff']
-                        tabs = st.tabs([f"📈 MFF Table IDX{i}" for i in range(5)])
-                        for i, tab in enumerate(tabs):
-                            with tab:
-                                original_df = pd.DataFrame(module_maps[f'MFFtable{i}'],
-                                                           index=[str(y) for y in module_maps['MFFtable0_Y']],
-                                                           columns=[str(x) for x in module_maps['MFFtable0_X']])
-                                recommended_df = recommended_mff_dfs[f'IDX{i}']
-                                styled_table = style_changed_cells(recommended_df, original_df)
-                                display_table_with_copy_button(f"#### Recommended `MFFtable{i}`", styled_table,
-                                                               recommended_df)
+                        if mff_results.get('warnings'):
+                            for warning in mff_results['warnings']:
+                                st.warning(f"MFF Analysis Warning: {warning}")
 
-                if knk_results and knk_results.get('status') == 'Success':
+                        if mff_results.get('status') == 'Success':
+                            recommended_mff_dfs = mff_results['results_mff']
+                            module_maps = all_maps_data['mff']
+                            tabs = st.tabs([f"📈 MFF Table IDX{i}" for i in range(5)])
+                            for i, tab in enumerate(tabs):
+                                with tab:
+                                    original_df = pd.DataFrame(module_maps[f'MFFtable{i}'],
+                                                               index=[str(y) for y in module_maps['MFFtable0_Y']],
+                                                               columns=[str(x) for x in module_maps['MFFtable0_X']])
+                                    recommended_df = recommended_mff_dfs[f'IDX{i}']
+                                    styled_table = style_changed_cells(recommended_df, original_df)
+                                    display_table_with_copy_button(f"#### Recommended `MFFtable{i}`", styled_table,
+                                                                   recommended_df)
+
+                if knk_results:
                     with st.expander("Ignition Timing (KNK) Tuning Results", expanded=True):
-                        if knk_results['warnings']:
-                            for warning in knk_results['warnings']: st.warning(f"KNK Analysis Warning: {warning}")
-                        recommended_knk_df, scatter_plot, base_map_np = knk_results['results_knk'], knk_results[
-                            'scatter_plot_fig'], knk_results['base_map']
-                        module_maps = all_maps_data['knk']
-                        tab1, tab2 = st.tabs(["📈 Recommended Table", "📊 Knock Scatter Plot"])
-                        with tab1:
-                            original_df = pd.DataFrame(base_map_np,
-                                                       index=[str(y) for y in module_maps['igyaxis']],
-                                                       columns=[str(x) for x in module_maps['igxaxis']])
-                            styled_table = style_changed_cells(recommended_knk_df, original_df)
-                            display_table_with_copy_button(
-                                f"#### Recommended Ignition Table (Correcting `{selected_map_name}`)",
-                                styled_table, recommended_knk_df)
-                        with tab2:
-                            if scatter_plot:
-                                st.pyplot(scatter_plot)
-                            else:
-                                st.info("Scatter plot was not generated (no knock events found).")
+                        if knk_results.get('warnings'):
+                            for warning in knk_results['warnings']:
+                                st.warning(f"KNK Analysis Warning: {warning}")
 
-                if lpfp_results and lpfp_results.get('status') == 'Success':
+                        if knk_results.get('status') == 'Success':
+                            recommended_knk_df, scatter_plot, base_map_np = knk_results['results_knk'], knk_results[
+                                'scatter_plot_fig'], knk_results['base_map']
+                            module_maps = all_maps_data['knk']
+                            tab1, tab2 = st.tabs(["📈 Recommended Table", "📊 Knock Scatter Plot"])
+                            with tab1:
+                                original_df = pd.DataFrame(base_map_np,
+                                                           index=[str(y) for y in module_maps['igyaxis']],
+                                                           columns=[str(x) for x in module_maps['igxaxis']])
+                                styled_table = style_changed_cells(recommended_knk_df, original_df)
+                                display_table_with_copy_button(
+                                    f"#### Recommended Ignition Table (Correcting `{selected_map_name}`)",
+                                    styled_table, recommended_knk_df)
+                            with tab2:
+                                if scatter_plot:
+                                    st.pyplot(scatter_plot)
+                                else:
+                                    st.info("Scatter plot was not generated (no knock events found).")
+
+                if lpfp_results:
                     with st.expander("Low-Pressure Fuel Pump (LPFP) Tuning Results", expanded=True):
-                        if lpfp_results['warnings']:
-                            for warning in lpfp_results['warnings']: st.warning(f"LPFP Analysis Warning: {warning}")
-                        recommended_lpfp_df = lpfp_results['results_lpfp']
-                        module_maps = all_maps_data['lpfp']
-                        table_key = module_maps['table_key']
-                        original_lpfp_df = pd.DataFrame(module_maps[table_key],
-                                                        index=[str(y) for y in module_maps['lpfppwm_Y']],
-                                                        columns=[str(x) for x in module_maps['lpfppwm_X']])
-                        styled_lpfp_table = style_changed_cells(recommended_lpfp_df, original_lpfp_df)
-                        display_table_with_copy_button(f"#### Recommended {table_key.upper()} Table",
-                                                       styled_lpfp_table, recommended_lpfp_df)
+                        if lpfp_results.get('warnings'):
+                            for warning in lpfp_results['warnings']:
+                                st.warning(f"LPFP Analysis Warning: {warning}")
 
-                if 'tta_att_results' in locals() and tta_att_results and tta_att_results.get(
-                        'status') == 'Success':
+                        if lpfp_results.get('status') == 'Success':
+                            recommended_lpfp_df = lpfp_results['results_lpfp']
+                            module_maps = all_maps_data['lpfp']
+                            table_key = module_maps['table_key']
+                            original_lpfp_df = pd.DataFrame(module_maps[table_key],
+                                                            index=[str(y) for y in module_maps['lpfppwm_Y']],
+                                                            columns=[str(x) for x in module_maps['lpfppwm_X']])
+                            styled_lpfp_table = style_changed_cells(recommended_lpfp_df, original_lpfp_df)
+                            display_table_with_copy_button(f"#### Recommended {table_key.upper()} Table",
+                                                           styled_lpfp_table, recommended_lpfp_df)
+
+                if tta_att_results:
                     with st.expander("TTA/ATT Consistency Check Results", expanded=True):
-                        if tta_att_results['warnings']:
+                        if tta_att_results.get('warnings'):
                             for warning in tta_att_results['warnings']:
                                 st.warning(f"TTA/ATT Check Warning: {warning}")
 
-                        st.info(
-                            "The table below shows the expected torque values calculated from the TTA table. Cells are highlighted in red if they deviate by more than 5% from your tune's actual ATT table.")
+                        if tta_att_results.get('debug_logs'):
+                            with st.expander("Click to view detailed TTA/ATT debug log"):
+                                st.code('\n'.join(tta_att_results['debug_logs']), language=None)
 
-                        result_tabs = st.tabs(sorted(tta_att_results['results'].keys()))
-                        for i, tab in enumerate(result_tabs):
-                            with tab:
-                                tab_name = sorted(tta_att_results['results'].keys())[i]
-                                data = tta_att_results['results'][tab_name]
-                                original_att_df = data['original_att']
-                                recommended_tta_inv_df = data['recommended_tta_inv']
+                        if tta_att_results.get('status') == 'Success':
+                            st.info(
+                                "The table below shows the expected torque values calculated from the TTA table. Cells are highlighted in red if they deviate by more than 5% from your tune's actual ATT table.")
 
-                                styled_table = style_deviation_cells(recommended_tta_inv_df, original_att_df,
-                                                                     threshold=0.05)
-                                display_table_with_copy_button(f"#### Recommended Inverse TTA for {tab_name}",
-                                                               styled_table, recommended_tta_inv_df)
+                            result_tabs = st.tabs(sorted(tta_att_results['results'].keys()))
+                            for i, tab in enumerate(result_tabs):
+                                with tab:
+                                    tab_name = sorted(tta_att_results['results'].keys())[i]
+                                    data = tta_att_results['results'][tab_name]
+                                    original_att_df = data['original_att']
+                                    recommended_tta_inv_df = data['recommended_tta_inv']
 
-                # --- ADDED ---
+                                    styled_table = style_deviation_cells(recommended_tta_inv_df, original_att_df,
+                                                                         threshold=0.05)
+                                    display_table_with_copy_button(f"#### Recommended Inverse TTA for {tab_name}",
+                                                                   styled_table, recommended_tta_inv_df)
+
                 # After a successful run, reset the flag to prevent re-running on the next interaction.
                 st.session_state.run_analysis = False
 
@@ -953,6 +899,5 @@ if 'run_analysis' in st.session_state and st.session_state.run_analysis:
             with st.expander("Click to view technical error details"):
                 st.code(traceback_str, language=None)
 
-            # --- ADDED ---
             # After an unsuccessful run, also reset the flag.
             st.session_state.run_analysis = False
