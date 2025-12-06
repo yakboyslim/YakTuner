@@ -42,7 +42,6 @@ def _process_and_filter_mff_data(log, logvars, tuning_mode='MFF'):
     else:
         warnings.append("Log variable 'LAMBDA_SP' not found. Cannot calculate fuel error.")
         return pd.DataFrame(), warnings
-    # --- END FIX ---
 
     # --- New Unified Correction Formula ---
     required_vars = ['LAMBDA', 'LAMBDA_SP']
@@ -55,40 +54,36 @@ def _process_and_filter_mff_data(log, logvars, tuning_mode='MFF'):
     mff_cor = df.get('MFF_COR', 1.0)
     if 'MFF_COR' not in logvars: warnings.append("Log 'MFF_COR' for best accuracy.")
 
-    fac_stft = df.get('FAC_STFT', 0.0)
+    # --- FIX: Simplified retrieval of STFT and LTFT variables ---
     fac_lam_out = df.get('FAC_LAM_OUT', 0.0)
     stft = df.get('STFT', 0.0)
-
-    fac_ltft = df.get('FAC_LTFT', 0.0)
-    add_ltft = df.get('ADD_LTFT', 0.0)
     fac_mff_add = df.get('FAC_MFF_ADD', 0.0)
     ltft = df.get('LTFT', 0.0)
+    # --- END FIX ---
 
-    # --- Construct LTFT Correction Term with Degradation ---
+    # --- FIX: Simplified degradation logic for LTFT ---
     ltft_correction_term = 1.0
-    if 'FAC_LTFT' in logvars and 'ADD_LTFT' in logvars:
-        ltft_correction_term = (1 + (fac_ltft + abs(fac_ltft) * add_ltft) / 100)
-    elif 'FAC_MFF_ADD' in logvars:
+    if 'FAC_MFF_ADD' in logvars:
         ltft_correction_term = (1 + fac_mff_add / 100)
-        warnings.append("Using 'FAC_MFF_ADD' as fallback for LTFT correction.")
+        warnings.append("Using 'FAC_MFF_ADD' for LTFT correction.")
     elif 'LTFT' in logvars:
         ltft_correction_term = (1 + ltft / 100)
         warnings.append("Using 'LTFT' as fallback for LTFT correction.")
     else:
         warnings.append("No suitable LTFT correction variable found. Assuming neutral LTFT correction (1.0).")
+    # --- END FIX ---
 
-    # --- Construct STFT Correction Term with Degradation ---
+    # --- FIX: Simplified degradation logic for STFT ---
     stft_correction_term = 1.0
-    if 'FAC_STFT' in logvars:
-        stft_correction_term = (1 + fac_stft / 100)
-    elif 'FAC_LAM_OUT' in logvars:
+    if 'FAC_LAM_OUT' in logvars:
         stft_correction_term = (1 + fac_lam_out / 100)
-        warnings.append("Using 'FAC_LAM_OUT' as fallback for STFT correction.")
+        warnings.append("Using 'FAC_LAM_OUT' for STFT correction.")
     elif 'STFT' in logvars:
         stft_correction_term = (1 + stft / 100)
         warnings.append("Using 'STFT' as fallback for STFT correction.")
     else:
         warnings.append("No suitable STFT correction variable found. Assuming neutral STFT correction (1.0).")
+    # --- END FIX ---
 
     total_ecu_factor = (1 + maf_cor / 100) * stft_correction_term * mff_cor * ltft_correction_term
     measured_error = df['LAMBDA'] / df['LAMBDA_SP']
