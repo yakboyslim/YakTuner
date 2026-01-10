@@ -241,20 +241,26 @@ def run_tta_extrapolation(all_maps, desired_max_tq):
             )
 
             # 2. Generate ATT
+            # First, update the ATT Y-axis (Airflow) to cover the new max airflow
+            max_airflow = np.max(new_tta)
+            new_att_y_axis = data['att_y'].copy().astype(float)
+            new_att_y_axis[-1] = max_airflow
+
             new_att = generate_inverse_att(
                 new_tta,
                 data['tta_x'],
                 new_y_axis,
                 data['att_x'],
-                data['att_y']
+                new_att_y_axis
             )
 
             results[name] = {
                 'original_tta': pd.DataFrame(data['tta_data'], index=data['tta_y'], columns=data['tta_x']),
                 'new_tta': pd.DataFrame(new_tta, index=new_y_axis, columns=data['tta_x']),
                 'original_att': pd.DataFrame(data['att_data'], index=data['att_y'], columns=data['att_x']),
-                'new_att': pd.DataFrame(new_att, index=data['att_y'], columns=data['att_x']),
-                'new_torque_axis': new_y_axis
+                'new_att': pd.DataFrame(new_att, index=new_att_y_axis, columns=data['att_x']),
+                'new_torque_axis': new_y_axis,
+                'new_att_airflow_axis': new_att_y_axis
             }
 
         except Exception as e:

@@ -46,25 +46,67 @@ def display_table_with_copy_button(title: str, styled_df, raw_df: pd.DataFrame):
 
     st_copy_button(clipboard_text, f"📋 Copy Data", key=button_key)
 
-def style_changed_cells(new_df: pd.DataFrame, old_df: pd.DataFrame):
-    """Compares two DataFrames and returns a Styler object with changed cells highlighted."""
+def style_changed_cells(new_df: pd.DataFrame, old_df: pd.DataFrame, threshold=0.0):
+    """
+    Compares two DataFrames and returns a Styler object with changed cells highlighted.
+
+    Args:
+        new_df: The new data frame.
+        old_df: The original data frame.
+        threshold: Minimum relative change required to highlight a cell (default 0.0).
+                   Example: 0.05 means only highlight if changed by >5%.
+    """
     try:
         new_df_c = new_df.copy().astype(float)
         old_df_c = old_df.copy().astype(float)
-        old_df_aligned, new_df_aligned = old_df_c.align(new_df_c, join='outer', axis=None)
+
+        # Check for shape mismatch. If shapes differ, we can't do cell-by-cell comparison easily.
+        # But here we assume the underlying grid shape (rows x cols) matches, even if axis values changed.
+        if new_df_c.shape != old_df_c.shape:
+             # Fallback or just return unstyled if dimensions differ completely
+            return new_df.style.format("{:.2f}")
+
+        # Compare VALUES directly, ignoring index labels (which might have changed)
+        new_vals = new_df_c.values
+        old_vals = old_df_c.values
 
         style_df = pd.DataFrame('', index=new_df.index, columns=new_df.columns)
         increase_style = 'background-color: #2B442B'
         decrease_style = 'background-color: #442B2B'
 
-        # Use numpy isclose for float comparison to avoid noise
-        is_diff = ~np.isclose(new_df_aligned, old_df_aligned, rtol=1e-5)
+        # Calculate relative difference (handling divide by zero)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            rel_diff = np.abs((new_vals - old_vals) / old_vals)
+            # If old value was 0, any non-zero new value is infinite change
+            rel_diff[old_vals == 0] = np.inf
 
-        style_df[is_diff & (new_df_aligned > old_df_aligned)] = increase_style
-        style_df[is_diff & (new_df_aligned < old_df_aligned)] = decrease_style
+        # Determine which cells changed significantly
+        # If threshold is 0, we just check for any inequality
+        if threshold == 0:
+             is_diff = ~np.isclose(new_vals, old_vals, rtol=1e-5)
+        else:
+             is_diff = rel_diff > threshold
+
+        # Apply styles
+        # Note: We must use iloc for positional assignment in style_df matching the numpy mask
+        mask_inc = is_diff & (new_vals > old_vals)
+        mask_dec = is_diff & (new_vals < old_vals)
+
+        # Apply to style dataframe
+        # We need to iterate or do a broadcast assignment.
+        # Pandas style apply is cell-wise or column/row-wise.
+        # Easier to just construct the style string matrix.
+
+        # Construct the style array directly
+        style_arr = np.full(new_vals.shape, '', dtype=object)
+        style_arr[mask_inc] = increase_style
+        style_arr[mask_dec] = decrease_style
+
+        # Create a DataFrame from the style array with matching index/columns
+        style_df = pd.DataFrame(style_arr, index=new_df.index, columns=new_df.columns)
 
         return new_df.style.apply(lambda x: style_df, axis=None).format("{:.2f}")
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
         return new_df.style.format("{:.2f}")
 
 @st.cache_resource(show_spinner=False)
@@ -175,9 +217,18 @@ if st.button("🚀 Run Extrapolation", type="primary", use_container_width=True)
                     # We pick the first result to show the axis
                     first_res = res_data[sorted_names[0]]
                     new_axis = first_res['new_torque_axis']
-                    st.info(f"**New Torque Axis (Last Value: {new_axis[-1]})**")
-                    st.code('\t'.join(map(str, new_axis)), language=None)
-                    st_copy_button('\t'.join(map(str, new_axis)), "📋 Copy New Torque Axis", key="copy_axis")
+                    new_att_axis = first_res['new_att_airflow_axis']
+
+                    col_ax1, col_ax2 = st.columns(2)
+                    with col_ax1:
+                        st.info(f"**New TTA Torque Axis (Last: {new_axis[-1]})**")
+                        st.code('\t'.join(map(str, new_axis)), language=None)
+                        st_copy_button('\t'.join(map(str, new_axis)), "📋 Copy TTA Axis", key="copy_axis_tta")
+
+                    with col_ax2:
+                        st.info(f"**New ATT Airflow Axis (Last: {new_att_axis[-1]:.2f})**")
+                        st.code('\t'.join(map(str, new_att_axis)), language=None)
+                        st_copy_button('\t'.join(map(str, new_att_axis)), "📋 Copy ATT Axis", key="copy_axis_att")
 
                     st.divider()
 
@@ -196,12 +247,12 @@ if st.button("🚀 Run Extrapolation", type="primary", use_container_width=True)
 
                             with col_tta:
                                 st.subheader("TTA (Torque -> Airflow)")
-                                styled_tta = style_changed_cells(pair_res['new_tta'], pair_res['original_tta'])
+                                styled_tta = style_changed_cells(pair_res['new_tta'], pair_res['original_tta'], threshold=0.0)
                                 display_table_with_copy_button(f"New TTA: {map_name}", styled_tta, pair_res['new_tta'])
 
                             with col_att:
                                 st.subheader("ATT (Airflow -> Torque)")
-                                styled_att = style_changed_cells(pair_res['new_att'], pair_res['original_att'])
+                                styled_att = style_changed_cells(pair_res['new_att'], pair_res['original_att'], threshold=0.05)
                                 display_table_with_copy_button(f"New ATT: {map_name}", styled_att, pair_res['new_att'])
             else:
                 st.error(results.get('message', "Analysis Failed"))
