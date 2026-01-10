@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from scipy.interpolate import griddata
+from scipy.interpolate import interp1d
 import re
 
 def _format_tta_att_suffix(map_suffix):
@@ -115,14 +115,6 @@ def extrapolate_tta(tta_data, tta_y_axis, desired_max_tq):
         # Check if we have enough points to fit a line (at least 2)
         if np.sum(valid_mask) < 2:
             # Not enough data to extrapolate safely.
-            # Strategy: Just keep the old values, but we MUST update the last row
-            # if we changed the axis.
-            # If we can't fit, maybe assume 0 slope? Or just use the last valid value?
-            # For now, let's leave it alone but warn if possible.
-            # However, if the last row IS the only point or something, we have issues.
-            # Let's try to fit even with all points if valid_mask is too small,
-            # assuming the "ceiling" detection might be too aggressive?
-            # No, if all are ceiling, it's a flat line.
             continue
 
         y_fit = tta_y_axis[valid_mask]
@@ -149,10 +141,6 @@ def extrapolate_tta(tta_data, tta_y_axis, desired_max_tq):
             y_val = new_y_axis[row_idx]
             new_z = m * y_val + c
 
-            # Ensure we don't accidentally lower a value below the ceiling if it was capped?
-            # User said "Z values... will need to be increased".
-            # The fit should handle this.
-
             # Additional check: Don't produce negative airflow
             new_z = max(0.0, new_z)
 
@@ -162,62 +150,69 @@ def extrapolate_tta(tta_data, tta_y_axis, desired_max_tq):
 
 def generate_inverse_att(new_tta_data, tta_x_axis, new_tta_y_axis, att_x_axis, att_y_axis):
     """
-    Generates the ATT table by inverting the New TTA table.
+    Generates the ATT table by inverting the New TTA table using column-wise 1D interpolation.
 
     Args:
-        new_tta_data: The new TTA Z-values (Airflow).
+        new_tta_data: The new TTA Z-values (Airflow). (Rows=Torque, Cols=RPM)
         tta_x_axis: TTA X-axis (RPM).
         new_tta_y_axis: New TTA Y-axis (Torque).
         att_x_axis: ATT X-axis (RPM).
         att_y_axis: ATT Y-axis (Airflow).
 
     Returns:
-        new_att_data: Interpolated ATT table (Torque).
+        new_att_data: Interpolated/Extrapolated ATT table (Torque). (Rows=Airflow, Cols=RPM)
     """
-    # TTA Mapping: (RPM, Torque) -> Airflow
-    # We want ATT: (RPM, Airflow) -> Torque
+    # 1. Create a "Virtual TTA" interpolated to the ATT RPM grid.
+    #    TTA is (Torque x TTA_RPM). We want (Torque x ATT_RPM).
+    #    Rows are preserved (Torque), Columns are resampled.
 
-    # 1. Create source points from TTA
-    # meshgrid returns (Y-dim, X-dim) arrays
-    rpm_mesh, torque_mesh = np.meshgrid(tta_x_axis, new_tta_y_axis)
+    num_torque_rows = new_tta_data.shape[0]
+    num_att_rpm_cols = len(att_x_axis)
 
-    # Source X (RPM), Source Y (Airflow - which is the Z of TTA)
-    # We are mapping (RPM, Airflow) -> Torque
+    virtual_tta = np.zeros((num_torque_rows, num_att_rpm_cols))
 
-    # Flatten arrays
-    src_rpm = rpm_mesh.flatten()
-    src_torque = torque_mesh.flatten()
-    src_airflow = new_tta_data.flatten()
+    for r in range(num_torque_rows):
+        # TTA Airflow values for this torque row across original TTA RPMs
+        z_row = new_tta_data[r, :]
 
-    # Input Points: (RPM, Airflow)
-    points = np.column_stack((src_rpm, src_airflow))
-    values = src_torque
+        # Create interpolator: Airflow = f(RPM) for this constant torque
+        # Use 'linear' interpolation, and extrapolate if ATT RPMs are outside TTA RPM range
+        f_rpm = interp1d(tta_x_axis, z_row, kind='linear', fill_value='extrapolate')
 
-    # 2. Create target query points for ATT
-    att_rpm_mesh, att_airflow_mesh = np.meshgrid(att_x_axis, att_y_axis)
-    query_points = np.column_stack((att_rpm_mesh.flatten(), att_airflow_mesh.flatten()))
+        # Calculate Airflow at ATT RPMs
+        virtual_tta[r, :] = f_rpm(att_x_axis)
 
-    # 3. Interpolate
-    # Use 'linear' interpolation. 'fill_value' handles out of bounds.
-    # Out of bounds might happen if new TTA doesn't cover the low/high airflow of ATT.
-    # For extrapolation, 'nearest' is a safer fallback for fill, or we can leave NaNs.
-    # griddata doesn't support extrapolation with 'linear'.
-    # LinearNDInterpolator vs griddata: griddata is a convenience wrapper.
+    # 2. Invert each column (RPM) to map Airflow -> Torque.
+    #    For each column c (corresponding to att_x_axis[c]):
+    #      We have a curve: Torque (new_tta_y_axis) vs Airflow (virtual_tta[:, c])
+    #      We want to find Torque for target Airflows (att_y_axis).
 
-    # Logic from TTA_ATT.py used griddata with method='linear'.
-    # It did: interpolated_tta_inv_table = np.nan_to_num(..., nan=0.0)
-    # We should probably match that behavior.
+    new_att_data = np.zeros((len(att_y_axis), len(att_x_axis)))
 
-    new_att_flat = griddata(points, values, query_points, method='linear')
-    new_att_data = new_att_flat.reshape(att_y_axis.shape[0], att_x_axis.shape[0])
+    for c in range(num_att_rpm_cols):
+        col_airflow = virtual_tta[:, c]
+        col_torque = new_tta_y_axis
 
-    # Fill NaNs. TTA_ATT used 0.0.
-    # However, for Torque, 0.0 might be valid or might be wrong.
-    # If we are outside the range, maybe we should clamp?
-    # For now, 0.0 is safe-ish, but let's check if we can do better.
-    # Actually, TTA_ATT.py logic was: interpolated_tta_inv_table = np.nan_to_num(interpolated_tta_inv_table, nan=0.0)
+        # Check monotonicity of Airflow vs Torque
+        # TTA maps generally have Airflow increasing with Torque.
+        # If not strictly monotonic, interp1d might fail or behave oddly.
+        # We can sort just in case, or handle it?
+        # Usually physics dictates monotonic.
+        # If multiple torque values produce same airflow, inversion is ambiguous.
+        # We assume monotonic.
 
-    new_att_data = np.nan_to_num(new_att_data, nan=0.0)
+        try:
+            # We want Torque = f(Airflow)
+            f_inv = interp1d(col_airflow, col_torque, kind='linear', fill_value='extrapolate')
+            new_att_data[:, c] = f_inv(att_y_axis)
+        except Exception as e:
+            # Fallback for errors (e.g., flat line airflow)
+            print(f"Error inverting column {c} (RPM {att_x_axis[c]}): {e}")
+            new_att_data[:, c] = 0.0
+
+    # Clamp negative torques to 0 if needed? Or allow them?
+    # Usually torque isn't negative in these maps (reference torque).
+    new_att_data = np.maximum(new_att_data, 0.0)
 
     return new_att_data
 
