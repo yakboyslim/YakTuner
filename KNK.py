@@ -37,7 +37,8 @@ def _prepare_knock_data(log):
     log['singlecyl'] = 0
     if len(rows_with_outlier) > 0:
         outlier_cyl_indices = np.argmax(outlier_scores[rows_with_outlier], axis=1)
-        log.loc[rows_with_outlier, 'singlecyl'] = outlier_cyl_indices + 1
+        # Use .iloc for positional indexing or convert positions to labels for .loc
+        log.loc[log.index[rows_with_outlier], 'singlecyl'] = outlier_cyl_indices + 1
 
     # --- Vectorized knock event detection ---
     knock_cols = ['KNK1', 'KNK2', 'KNK3', 'KNK4']
