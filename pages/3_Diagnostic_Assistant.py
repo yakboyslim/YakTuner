@@ -199,9 +199,12 @@ if st.button("Get Diagnostic Answer", key="get_diag_answer", use_container_width
                 # --- Step 1: Configure API-dependent components ---
                 status.update(label="Initializing models and loading knowledge base...")
                 genai.configure(api_key=api_key)
-                embed_model = GoogleGenAIEmbedding(model_name="models/text-embedding-004", api_key=api_key)
-                genai.configure(api_key=api_key)
-                embed_model = GoogleGenAIEmbedding(model_name="models/text-embedding-004", api_key=api_key)
+                # For user queries, the task type must be 'retrieval_query' for the new model
+                embed_model = GoogleGenAIEmbedding(
+                    model_name=EMBEDDING_MODEL,
+                    api_key=api_key,
+                    task_type="retrieval_query"
+                )
                 llama_index.core.Settings.embed_model = embed_model
                 llama_index.core.Settings.llm = GoogleGenAI(model_name=f"models/{GENERATION_MODEL}", api_key=api_key)
 
